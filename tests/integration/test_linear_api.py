@@ -123,32 +123,59 @@ class TestIssueManagement:
         print(f"✓ Bulk updated {result['success_count']} issues to priority=1")
     
     def test_06_link_issues(self):
-        """Should create relationships between test issues."""
-        # Use search to find test issues (more reliable than list with limit)
-        search_result = search_issues(query=TEST_PREFIX, limit=50)
-        test_issues = [
-            issue for issue in search_result["issues"]
-            if issue["title"].startswith(TEST_PREFIX) and "Bulk Test" in issue["title"]
-        ]
-        
-        assert len(test_issues) >= 2, f"need two test issues to link, found {len(test_issues)}"
-        
-        # Try to link, handling the case where issues might be trashed
+        """Should create relationships between two freshly created issues.
+
+        This test owns its fixtures rather than scavenging issues left by
+        earlier runs. Reusing leftovers made it flaky in two ways: a workspace
+        with lots of accumulated test data pushed the ones it wanted out of the
+        result window, and issues trashed by a previous cleanup were still
+        returned by search but rejected by the link mutation. Creating the pair
+        here means the assertions always run - no skip, no silent pass.
+        """
+        teams = list_teams()
+        team_id = teams["teams"][0]["id"]
+
+        blocker = create_issue(
+            team_id=team_id,
+            title=f"{TEST_PREFIX} Link Blocker {RUN_ID}",
+            description="Created by test_06 to verify link_issues.",
+        )["issue"]
+        blocked = create_issue(
+            team_id=team_id,
+            title=f"{TEST_PREFIX} Link Blocked {RUN_ID}",
+            description="Created by test_06 to verify link_issues.",
+        )["issue"]
+
         try:
             result = link_issues(
-                issue_id=test_issues[0]["id"],
-                related_issue_id=test_issues[1]["id"],
-                relationship_type="blocks"
+                issue_id=blocker["id"],
+                related_issue_id=blocked["id"],
+                relationship_type="blocks",
             )
-            
+
             assert result["success"] is True
             assert result["relationship"] == "blocks"
             assert result["relation"]["type"] == "blocks"
-            print(f"✓ Linked issues: {test_issues[0]['identifier']} blocks {test_issues[1]['identifier']}")
-        except Exception as e:
-            if "trashed" in str(e).lower():
-                pytest.skip(f"Test issues are trashed: {e}")
-            raise
+            assert result["relation"]["issue"]["id"] == blocker["id"]
+            assert result["relation"]["relatedIssue"]["id"] == blocked["id"]
+            print(f"✓ Linked issues: {blocker['identifier']} blocks {blocked['identifier']}")
+
+            # blocked_by inverts the pair - Linear's enum has no such member.
+            inverse = link_issues(
+                issue_id=blocker["id"],
+                related_issue_id=blocked["id"],
+                relationship_type="blocked_by",
+            )
+            assert inverse["relation"]["issue"]["id"] == blocked["id"]
+            assert inverse["relation"]["relatedIssue"]["id"] == blocker["id"]
+            print(f"✓ Inverted: {blocked['identifier']} blocks {blocker['identifier']}")
+        finally:
+            # Always clean up, so a later run never inherits these.
+            for issue in (blocker, blocked):
+                try:
+                    delete_issue(issue_id=issue["id"])
+                except Exception:
+                    pass
     
     def test_07_get_issue_details(self):
         """Should retrieve detailed issue information."""
