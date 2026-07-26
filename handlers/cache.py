@@ -1,6 +1,7 @@
 """Caching layer with Redis and in-memory fallback."""
 
 import hashlib
+import logging
 import os
 import json
 import time
@@ -8,6 +9,8 @@ from typing import Any, Callable, Dict, Optional
 from functools import wraps
 
 from .credentials import resolve_api_key
+
+logger = logging.getLogger(__name__)
 
 
 class CacheBackend:
@@ -168,6 +171,11 @@ class CacheManager:
         host = os.environ.get("REDIS_HOST", "localhost")
         port = int(os.environ.get("REDIS_PORT", "6379"))
         db = int(os.environ.get("REDIS_DB", "0"))
+        if not os.environ.get("REDIS_PASSWORD") and not url:
+            logger.warning(
+                "Redis connection without authentication — set REDIS_URL with "
+                "credentials for production"
+            )
         return RedisCache(host=host, port=port, db=db)
     
     def get(self, key: str) -> Optional[Any]:

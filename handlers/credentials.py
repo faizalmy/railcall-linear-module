@@ -16,7 +16,14 @@ from typing import Any, Dict, Optional
 
 
 def _rc_helpers() -> Optional[Dict[str, Any]]:
-    """The helper dict the Studio loader injects, or None when standalone."""
+    """The helper dict the Studio loader injects, or None when standalone.
+
+    Trust boundary: ``__rc_helpers__`` is owned and populated by the Studio
+    loader, not by this module. Any code sharing the bundled namespace could
+    theoretically mutate it, so we treat whatever it contains as untrusted
+    input (hence the isinstance/callable guards below). This is by design -
+    the loader is the authority on what helpers exist.
+    """
     helpers = globals().get("__rc_helpers__")
     return helpers if isinstance(helpers, dict) else None
 
@@ -36,7 +43,9 @@ def vault_entry(provider: str = "linear") -> Optional[Dict[str, Any]]:
 
     try:
         entry = getter(provider)
-    except Exception:
+    except Exception as exc:
+        import logging
+        logging.debug("vault_get failed for provider %r: %s", provider, exc)
         return None
 
     return entry if isinstance(entry, dict) else None

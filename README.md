@@ -6,7 +6,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-163%20unit%20%2B%2047%20live-brightgreen.svg)](./tests/)
+[![Tests](https://img.shields.io/badge/tests-171%20unit%20%2B%2046%20live-brightgreen.svg)](./tests/)
 [![Coverage](https://img.shields.io/badge/coverage-75%25-yellowgreen.svg)](./tests/)
 
 *Comprehensive Linear integration with automatic retry, rate limiting, caching, and enterprise-grade error handling*
@@ -383,7 +383,7 @@ railcall-linear-module/
 │       ├── errors.py        # Error handling utilities
 │       ├── validation.py    # Input validation
 │       └── pagination.py    # Pagination utilities
-├── tests/                   # 163 unit + 47 live (package + generated bundle)
+├── tests/                   # 171 unit + 46 live (package + generated bundle)
 ├── docs/                    # Documentation
 └── .github/workflows/       # CI/CD pipeline
 ```
@@ -519,6 +519,33 @@ export LOG_LEVEL=DEBUG
 
 ---
 
+## 📦 Publishing to the Marketplace
+
+The repo is the readable source; what gets published is a generated, signed
+bundle. Build it, then publish the directory:
+
+```bash
+python3 tools/build_bundle.py --minify --out dist-min
+```
+
+```bash
+railcall market publish dist-min/agentstack-labs-linear --type=module --price=0
+```
+
+Three things are worth knowing before you do this yourself:
+
+| | |
+|---|---|
+| **100 KiB body limit** | The marketplace returns `HTTP 413` above ~102,400 bytes. The unminified bundle is ~125 KB of POST body and does not fit, so `--minify` (which strips docstrings and comments, nothing else) is required. The build prints the projected POST size against the limit. |
+| **`id` vs `name`** | The [published spec](https://railcall.ai/docs/marketplace-developer/modules/) documents commands keyed by `name`; the shipped Studio loader reads `id` and silently skips any command without one. The build emits **both**, plus `slug` alongside `id` at the top level. |
+| **`market claim` is not a publish step** | The docs list `railcall market claim <slug>` before publishing. In the shipped CLI, `claim` is a *buyer's* post-purchase license claim. Publishing needs only `market publisher init` and `market login`. |
+
+Prerequisites: `railcall market publisher init "<name>"` (once) and
+`railcall market login`. The manifest's `publisher_pubkey` must match that
+keypair or every install refuses the module.
+
+---
+
 ## 🤝 Contributing
 
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
@@ -570,9 +597,9 @@ This module is submitted to the **RailCall Community Contest 2026 Q3**.
 
 | Metric | Status |
 |--------|--------|
-| Version | 2.0.0 |
+| Version | 1.0.0 |
 | Commands | 30 |
-| Test Coverage | 163 unit (75% lines) + 47 live against a real Linear workspace |
+| Test Coverage | 171 unit (75% lines) + 46 live against a real Linear workspace |
 | Python Support | 3.9+ |
 | License | MIT |
 | Production Ready | ✅ Yes |

@@ -62,6 +62,7 @@ from .queries import (
     UPDATE_MILESTONE,
 )
 from .utils import (
+    AuthenticationError,
     LinearError,
     RateLimitError,
     validate_issue_id,
@@ -440,6 +441,8 @@ def bulk_update_issues(
                     f"Re-run with the not_attempted IDs once the limit resets."
                 ),
             }
+        except AuthenticationError:
+            raise  # credential problems must surface immediately
         except LinearError as e:
             errors.append({"issue_id": issue_id, "error": str(e)})
         except Exception as e:  # noqa: BLE001 - one bad ID must not abort the batch

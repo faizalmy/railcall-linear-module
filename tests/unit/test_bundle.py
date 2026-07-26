@@ -46,7 +46,16 @@ class TestManifestShape:
         assert manifest["commands"], "no commands built"
         for command in manifest["commands"]:
             assert command["id"].startswith("linear."), command
-            assert "name" not in command
+
+    def test_commands_carry_both_id_and_name(self, manifest):
+        """The docs specify `name`; the shipped loader reads `id` and skips
+        commands without one. Emitting both satisfies each."""
+        for command in manifest["commands"]:
+            assert command["id"] == "linear." + command["name"], command
+            assert command["description"], command["id"]
+
+    def test_manifest_carries_both_id_and_slug(self, manifest):
+        assert manifest["slug"] == manifest["id"]
 
     def test_command_count_matches_source(self, manifest, source_manifest):
         assert len(manifest["commands"]) == len(source_manifest["commands"])
@@ -246,3 +255,73 @@ class TestSignature:
         tampered = dict(manifest, version="9.9.9")
         with pytest.raises(InvalidSignature):
             build_bundle.verify(tampered, handler_bytes, signature)
+
+
+class TestMarketplaceSizeLimit:
+    """The marketplace rejects a POST body over 100 KiB (measured: 102,400).
+
+    The body is module.json + handler.py + JSON overhead, so an unminified
+    bundle does not fit and publishing fails with HTTP 413.
+    """
+
+    LIMIT = 102_400
+
+    def _post_size(self, manifest, handler_text):
+        """Mirror _market_publish's payload: three strings in a JSON envelope."""
+        payload = {
+            "module_json": json.dumps(manifest),
+            "handler_py": handler_text,
+            "module_sig": "0" * 128,
+        }
+        submission = {
+            "id": manifest["id"],
+            "listing_type": "module",
+            "title": manifest.get("name", ""),
+            "description": manifest.get("description", ""),
+            "category": "Ops",
+            "price_cents": 0,
+            "payload": payload,
+            "payload_sha": "0" * 64,
+        }
+        return len(json.dumps(submission).encode("utf-8"))
+
+    def test_minified_bundle_fits(self, manifest):
+        minified = build_bundle.minify(
+            build_bundle.flatten_sources() + build_bundle.build_adapters(manifest)
+        )
+        size = self._post_size(manifest, minified)
+        assert size < self.LIMIT, (
+            f"publish payload is {size:,} bytes, over the {self.LIMIT:,} limit"
+        )
+
+    def test_minification_preserves_behavior(self, manifest):
+        """Same adapters, same callables - only docstrings and comments go."""
+        readable = build_bundle.flatten_sources() + build_bundle.build_adapters(manifest)
+        minified = build_bundle.minify(readable)
+
+        namespaces = []
+        for text in (readable, minified):
+            ns = {
+                "__name__": "railcall_module_test",
+                "__file__": "handler.py",
+                "__rc_helpers__": {},
+                "os": os,
+                "json": json,
+                "time": __import__("time"),
+            }
+            exec(compile(text, "handler.py", "exec"), ns)
+            namespaces.append(ns)
+
+        for command in manifest["commands"]:
+            fn_name = build_bundle.handler_function_name(command["id"])
+            assert callable(namespaces[1].get(fn_name)), fn_name
+
+        # Validation still fires - proof the logic survived, not just the names.
+        with pytest.raises(RuntimeError, match="Invalid issue_id"):
+            namespaces[1]["linear_get_issue"]({"issue_id": "nope"}, "stamp")
+
+    def test_minified_output_still_compiles(self, manifest):
+        minified = build_bundle.minify(
+            build_bundle.flatten_sources() + build_bundle.build_adapters(manifest)
+        )
+        compile(minified, "handler.py", "exec")

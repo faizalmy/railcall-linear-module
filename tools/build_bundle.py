@@ -28,6 +28,7 @@ Studio picks it up on its next module reload.
 """
 
 import argparse
+import ast
 import json
 import os
 import re
@@ -110,6 +111,45 @@ def _rc_invoke(fn, inputs):
 '''
 
 
+MINIFIED_HEADER = """# RailCall Linear module - GENERATED, DO NOT EDIT.
+#
+# Docstrings and comments are stripped so the published bundle fits the
+# marketplace's 100 KiB request limit. The fully documented source this was
+# generated from lives at:
+#     https://github.com/faizalmy/railcall-linear-module
+# Rebuild with: python3 tools/build_bundle.py --minify
+"""
+
+
+def minify(text):
+    """Drop docstrings and comments; keep behavior byte-for-byte equivalent.
+
+    ast.unparse regenerates source from the parse tree, which discards comments
+    for free; docstrings are removed explicitly first. The result is checked by
+    the same tests as the readable build, so a mistake here fails the suite
+    rather than silently shipping.
+    """
+    tree = ast.parse(text)
+
+    for node in ast.walk(tree):
+        if not isinstance(
+            node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+        ):
+            continue
+        body = node.body
+        is_docstring = (
+            body
+            and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)
+        )
+        if is_docstring:
+            # A function whose only statement was a docstring still needs a body.
+            node.body = body[1:] or [ast.Pass()]
+
+    return MINIFIED_HEADER + ast.unparse(ast.fix_missing_locations(tree)) + "\n"
+
+
 def read_source(rel_path):
     with open(os.path.join(REPO_ROOT, rel_path), "r", encoding="utf-8") as handle:
         return handle.read()
@@ -186,7 +226,14 @@ def build_manifest(source):
         side_effects = command.get("side_effects", "none")
 
         commands.append({
+            # Both keys on purpose. The published spec
+            # (railcall.ai/docs/marketplace-developer/modules) documents
+            # `name` + `description`; the shipped Studio loader reads `id` and
+            # skips any command without one. Emitting both satisfies the
+            # marketplace validator and still registers in the runtime.
             "id": command_id(name),
+            "name": name,
+            "description": command.get("description") or "",
             "title": command.get("description") or name.replace("_", " ").capitalize(),
             "provider": PROVIDER,
             "risk": risk_for(name, side_effects),
@@ -200,6 +247,9 @@ def build_manifest(source):
 
     return {
         "id": source["id"],
+        # `slug` is the documented manifest key; `id` is what the CLI's publish
+        # path and the loader actually read. Same value, both spellings.
+        "slug": source["id"],
         "version": source["version"],
         "name": source["name"],
         "description": source["description"],
@@ -296,6 +346,11 @@ def main():
         action="store_true",
         help="build and compile only - no signing key needed (for CI)",
     )
+    parser.add_argument(
+        "--minify",
+        action="store_true",
+        help="strip docstrings/comments to fit the marketplace 100 KiB limit",
+    )
     args = parser.parse_args()
 
     with open(SOURCE_MANIFEST, "r", encoding="utf-8") as handle:
@@ -303,6 +358,8 @@ def main():
 
     manifest = build_manifest(source)
     handler_text = flatten_sources() + build_adapters(manifest)
+    if args.minify:
+        handler_text = minify(handler_text)
     handler_bytes = handler_text.encode("utf-8")
 
     # The bundle must import cleanly on its own before it is worth signing.
@@ -342,9 +399,16 @@ def main():
     with open(os.path.join(out_dir, "module.sig"), "w", encoding="utf-8") as handle:
         handle.write(signature_hex + "\n")
 
+    # The marketplace rejects a POST body over 100 KiB, and the body is the
+    # manifest plus the handler plus JSON overhead.
+    post_estimate = len(manifest_bytes) + len(handler_bytes) + 2048
+    limit = 102_400
+
     print(f"bundle:    {out_dir}")
     print(f"commands:  {len(manifest['commands'])}")
-    print(f"handler:   {len(handler_bytes):,} bytes")
+    print(f"handler:   {len(handler_bytes):,} bytes" + (" (minified)" if args.minify else ""))
+    print(f"POST size: ~{post_estimate:,} of {limit:,} bytes"
+          + ("" if post_estimate < limit else "  <-- TOO LARGE, rebuild with --minify"))
     print(f"signature: verified against {manifest['publisher_pubkey'][:16]}...")
 
     if args.install:

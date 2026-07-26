@@ -68,6 +68,42 @@ class TestRetryBudget:
         assert post.call_count == 2
 
 
+class TestPostAuthHeaders:
+    """_post must carry the API key into the Authorization header, and a 401
+    response must surface as AuthenticationError rather than being retried."""
+
+    def test_401_response_raises_authentication_error(self, client):
+        """_post returns the 401 verbatim; execute turns it into AuthenticationError
+        without retrying (deterministic auth failures must fail fast)."""
+        with patch.object(client.session, "post") as post, patch("handlers.client.time.sleep"):
+            post.return_value = _response(status_code=401)
+
+            with pytest.raises(AuthenticationError):
+                client.execute("query { viewer { id } }")
+
+        assert post.call_count == 1
+
+    def test_empty_api_key_sends_empty_authorization_header(self):
+        with patch.dict(os.environ, {"LINEAR_API_KEY": "seed"}):
+            client = LinearClient()
+        client.api_key = ""  # simulate a credential that resolved to empty
+
+        with patch.object(client.session, "post") as post:
+            post.return_value = _response(json_body={"data": {}})
+            client._post({"query": "q"}, timeout=5)
+
+        headers = post.call_args.kwargs["headers"]
+        assert headers["Authorization"] == ""
+
+    def test_valid_api_key_sends_correct_authorization_header(self, client):
+        with patch.object(client.session, "post") as post:
+            post.return_value = _response(json_body={"data": {}})
+            client._post({"query": "q"}, timeout=5)
+
+        headers = post.call_args.kwargs["headers"]
+        assert headers["Authorization"] == "test_api_key"
+
+
 class TestNonRetryableErrors:
     """Deterministic failures must fail fast instead of burning the budget."""
 
