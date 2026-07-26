@@ -54,16 +54,25 @@ def handle_graphql_errors(response: Dict[str, Any]) -> None:
     """
     if "errors" not in response:
         return
-    
+
     error = response["errors"][0]
-    message = error.get("message", "Unknown error")
     extensions = error.get("extensions", {})
     code = extensions.get("code")
+
+    # Linear puts the actionable text in userPresentableMessage and leaves
+    # `message` as a generic label like "Argument Validation Error", which tells
+    # the caller nothing about which field was wrong.
+    message = (
+        extensions.get("userPresentableMessage")
+        or error.get("message")
+        or "Unknown error"
+    )
     
     # Map Linear error codes to exceptions
     if code == "AUTHENTICATION_ERROR":
         raise AuthenticationError(
-            "Invalid API key or expired OAuth token. Run `railcall connect linear` to re-authenticate.",
+            "Invalid or revoked Linear API key. Generate a new one at "
+            "Linear > Settings > API and update LINEAR_API_KEY.",
             code=code,
             details=extensions
         )

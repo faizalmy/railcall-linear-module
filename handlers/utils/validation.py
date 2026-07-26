@@ -1,6 +1,7 @@
 """Input validation utilities for Linear API operations."""
 
 import re
+from datetime import datetime
 from typing import Optional
 
 from .errors import ValidationError
@@ -181,6 +182,122 @@ def validate_url(url: str, field_name: str = "url") -> None:
     url_pattern = r'^https?://[^\s/$.?#].[^\s]*$'
     if not re.match(url_pattern, url, re.IGNORECASE):
         raise ValidationError(f"Invalid {field_name} format: {url}")
+
+
+def validate_comment_id(comment_id: str) -> None:
+    """Validate comment ID format.
+
+    Args:
+        comment_id: Comment ID to validate
+
+    Raises:
+        ValidationError: If comment ID format is invalid
+    """
+    validate_uuid(comment_id, "comment_id")
+
+
+def validate_color(color: str, field_name: str = "color") -> None:
+    """Validate a hex color code as Linear expects it (#RGB or #RRGGBB).
+
+    Args:
+        color: Color string to validate
+        field_name: Name of the field for error messages
+
+    Raises:
+        ValidationError: If the color is not a hex code
+    """
+    if not re.match(r'^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$', color or ""):
+        raise ValidationError(
+            f"Invalid {field_name}: {color}. Expected a hex code such as '#FF0000'."
+        )
+
+
+def validate_iso_date(value: str, field_name: str) -> None:
+    """Validate an ISO 8601 date or datetime string.
+
+    Args:
+        value: Date string to validate
+        field_name: Name of the field for error messages
+
+    Raises:
+        ValidationError: If the value is not ISO 8601
+    """
+    candidate = (value or "").strip()
+    if not candidate:
+        raise ValidationError(f"{field_name} cannot be empty")
+
+    # datetime.fromisoformat below Python 3.11 does not accept a trailing 'Z'
+    normalized = candidate[:-1] + "+00:00" if candidate.endswith("Z") else candidate
+
+    try:
+        datetime.fromisoformat(normalized)
+    except ValueError:
+        raise ValidationError(
+            f"Invalid {field_name}: {value}. Expected ISO 8601, "
+            f"e.g. '2026-01-31' or '2026-01-31T00:00:00Z'."
+        )
+
+
+def validate_non_empty(value: str, field_name: str) -> None:
+    """Validate that a required string carries actual content.
+
+    Args:
+        value: String to validate
+        field_name: Name of the field for error messages
+
+    Raises:
+        ValidationError: If the value is empty or whitespace only
+    """
+    if not value or not value.strip():
+        raise ValidationError(f"{field_name} cannot be empty")
+
+
+def validate_timeless_date(value: str, field_name: str) -> str:
+    """Validate a date and normalize it to Linear's TimelessDate (YYYY-MM-DD).
+
+    ProjectMilestone.targetDate is a TimelessDate, not a datetime. An ISO
+    datetime is accepted and truncated to its date part.
+
+    Args:
+        value: Date string to validate
+        field_name: Name of the field for error messages
+
+    Returns:
+        The date as YYYY-MM-DD
+
+    Raises:
+        ValidationError: If the value is not a valid ISO date or datetime
+    """
+    validate_iso_date(value, field_name)
+
+    candidate = value.strip()
+    normalized = candidate[:-1] + "+00:00" if candidate.endswith("Z") else candidate
+    return datetime.fromisoformat(normalized).date().isoformat()
+
+
+def validate_resource_types(resource_types: list) -> None:
+    """Validate a webhook's resourceTypes list.
+
+    Linear requires at least one; unknown names are rejected server-side, so
+    this checks shape rather than pinning a list that drifts with the API.
+    Common values: Issue, Comment, IssueLabel, Project, ProjectUpdate, Cycle,
+    Reaction, Document, Initiative.
+
+    Args:
+        resource_types: List of resource type names
+
+    Raises:
+        ValidationError: If the list is empty or holds non-strings
+    """
+    if not resource_types:
+        raise ValidationError(
+            "resource_types cannot be empty - Linear requires at least one, "
+            "e.g. ['Issue', 'Comment']."
+        )
+
+    for item in resource_types:
+        if not isinstance(item, str) or not item.strip():
+            raise ValidationError(f"Invalid resource type: {item!r}. Expected a non-empty string.")
 
 
 def validate_webhook_events(events: list) -> None:

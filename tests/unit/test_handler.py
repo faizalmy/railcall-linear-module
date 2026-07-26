@@ -39,7 +39,7 @@ from handlers.handler import (
     create_milestone,
     update_milestone,
 )
-from handlers.utils.errors import ValidationError
+from handlers.utils.errors import LinearError, RateLimitError, ValidationError
 
 
 class TestIssueCommands:
@@ -388,7 +388,7 @@ class TestWebhookCommands:
             }
         }
         
-        result = create_webhook(url="https://example.com")
+        result = create_webhook(url="https://example.com", all_public_teams=True)
         assert result["webhook"]["url"] == "https://example.com"
 
 
@@ -399,7 +399,7 @@ class TestMilestoneCommands:
     def test_list_milestones_success(self, mock_query):
         """Should list milestones successfully."""
         mock_query.return_value = {
-            "milestones": {
+            "projectMilestones": {
                 "nodes": [{"id": "milestone-1", "name": "v1.0"}],
                 "pageInfo": {"hasNextPage": False, "endCursor": None}
             }
@@ -413,13 +413,14 @@ class TestMilestoneCommands:
     def test_create_milestone_success(self, mock_query):
         """Should create milestone successfully."""
         mock_query.return_value = {
-            "milestoneCreate": {
+            "projectMilestoneCreate": {
                 "success": True,
-                "milestone": {"id": "milestone-1", "name": "v2.0"}
+                "projectMilestone": {"id": "milestone-1", "name": "v2.0"}
             }
         }
         
         result = create_milestone(
+            project_id="123e4567-e89b-12d3-a456-426614174000",
             name="v2.0",
             target_date="2026-12-31T00:00:00Z"
         )
@@ -604,3 +605,247 @@ class TestLinkIssues:
 
         with pytest.raises(ValueError, match="Failed to link issues"):
             link_issues(self.ISSUE_A, self.ISSUE_B)
+
+
+class TestBulkUpdateRateLimit:
+    """A batch must stop rather than hammer a closed rate-limit window."""
+
+    IDS = [
+        "123e4567-e89b-12d3-a456-42661417400{}".format(i) for i in range(4)
+    ]
+    STATE = "123e4567-e89b-12d3-a456-426614174009"
+
+    @patch('handlers.handler.execute_query')
+    def test_stops_and_reports_unattempted_ids(self, mock_query):
+        """Should abandon the batch on 429 and name what was never tried."""
+        ok = {"issueUpdate": {"success": True, "issue": {"id": "x"}}}
+        mock_query.side_effect = [ok, ok, RateLimitError("Rate limit exceeded.")]
+
+        result = bulk_update_issues(issue_ids=self.IDS, state_id=self.STATE)
+
+        assert result["rate_limited"] is True
+        assert result["success_count"] == 2
+        assert result["not_attempted"] == self.IDS[2:]
+        # Two successes, then it stops - the 4th ID is never sent
+        assert mock_query.call_count == 3
+
+    @patch('handlers.handler.execute_query')
+    def test_one_bad_id_does_not_abort_the_batch(self, mock_query):
+        """Should keep going past a per-issue failure."""
+        ok = {"issueUpdate": {"success": True, "issue": {"id": "x"}}}
+        mock_query.side_effect = [ok, LinearError("nope"), ok, ok]
+
+        result = bulk_update_issues(issue_ids=self.IDS, state_id=self.STATE)
+
+        assert result["rate_limited"] is False
+        assert result["success_count"] == 3
+        assert result["failure_count"] == 1
+
+
+class TestAddedInputValidation:
+    """Fields that previously reached the API unchecked."""
+
+    TEAM = "123e4567-e89b-12d3-a456-426614174000"
+
+    @patch('handlers.handler.execute_query')
+    def test_create_label_rejects_bad_color(self, mock_query):
+        with pytest.raises(ValidationError):
+            create_label(team_id=self.TEAM, name="Bug", color="red")
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_create_state_rejects_blank_name(self, mock_query):
+        with pytest.raises(ValidationError):
+            create_state(team_id=self.TEAM, name="  ", color="#FF0000")
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_create_cycle_rejects_non_iso_dates(self, mock_query):
+        with pytest.raises(ValidationError):
+            create_cycle(team_id=self.TEAM, starts_at="01/01/2026", ends_at="14/01/2026")
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_create_cycle_rejects_inverted_range(self, mock_query):
+        with pytest.raises(ValueError, match="earlier than"):
+            create_cycle(
+                team_id=self.TEAM,
+                starts_at="2026-01-14T00:00:00Z",
+                ends_at="2026-01-01T00:00:00Z",
+            )
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_delete_comment_rejects_non_uuid(self, mock_query):
+        with pytest.raises(ValidationError):
+            delete_comment(comment_id="oops")
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_create_comment_rejects_blank_body(self, mock_query):
+        with pytest.raises(ValidationError):
+            create_comment(issue_id=self.TEAM, body="")
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_create_milestone_rejects_bad_date(self, mock_query):
+        with pytest.raises(ValidationError):
+            create_milestone(project_id=self.TEAM, name="v2.0", target_date="soon")
+        mock_query.assert_not_called()
+
+
+class TestCreateStateType:
+    """Linear's WorkflowStateCreateInput does not accept 'triage'."""
+
+    TEAM = "123e4567-e89b-12d3-a456-426614174000"
+
+    @patch('handlers.handler.execute_query')
+    def test_rejects_triage(self, mock_query):
+        """Should reject the value Linear rejects, before the round trip."""
+        with pytest.raises(ValueError, match="triage"):
+            create_state(team_id=self.TEAM, name="Test", color="#FF0000", state_type="triage")
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_default_state_type_is_accepted_by_linear(self, mock_query):
+        """The default must be a value the API actually allows."""
+        mock_query.return_value = {
+            "workflowStateCreate": {
+                "success": True,
+                "workflowState": {"id": "state-1", "name": "Test", "type": "backlog"},
+            }
+        }
+
+        create_state(team_id=self.TEAM, name="Test", color="#FF0000")
+
+        assert mock_query.call_args[0][1]["input"]["type"] == "backlog"
+
+
+class TestSchemaShapes:
+    """Shapes the real Linear API rejected before these were corrected."""
+
+    PROJECT = "123e4567-e89b-12d3-a456-426614174000"
+    ISSUE = "123e4567-e89b-12d3-a456-426614174001"
+
+    @patch('handlers.handler.execute_query')
+    def test_list_comments_sends_a_comment_filter(self, mock_query):
+        """$issueId as String! landed in an ID position and 400'd."""
+        mock_query.return_value = {
+            "comments": {"nodes": [], "pageInfo": {"hasNextPage": False, "endCursor": None}}
+        }
+
+        list_comments(issue_id=self.ISSUE)
+
+        variables = mock_query.call_args[0][1]
+        assert "issueId" not in variables
+        assert variables["filter"] == {"issue": {"id": {"eq": self.ISSUE}}}
+
+    @patch('handlers.handler.execute_query')
+    def test_create_webhook_sends_resource_types(self, mock_query):
+        """resourceTypes is a required field of WebhookCreateInput."""
+        mock_query.return_value = {
+            "webhookCreate": {"success": True, "webhook": {"id": "wh-1", "url": "https://e.com"}}
+        }
+
+        create_webhook(url="https://e.com", all_public_teams=True)
+
+        assert mock_query.call_args[0][1]["input"]["resourceTypes"] == ["Issue", "Comment"]
+
+    @patch('handlers.handler.execute_query')
+    def test_create_webhook_rejects_empty_resource_types(self, mock_query):
+        with pytest.raises(ValidationError):
+            create_webhook(url="https://e.com", resource_types=[], all_public_teams=True)
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_create_milestone_requires_a_project(self, mock_query):
+        """Linear milestones are project-scoped; projectId is non-null."""
+        mock_query.return_value = {
+            "projectMilestoneCreate": {"success": True, "projectMilestone": {"id": "m-1"}}
+        }
+
+        create_milestone(project_id=self.PROJECT, name="v2.0", target_date="2026-12-31T00:00:00Z")
+
+        input_data = mock_query.call_args[0][1]["input"]
+        assert input_data["projectId"] == self.PROJECT
+        # targetDate is a TimelessDate, not a datetime
+        assert input_data["targetDate"] == "2026-12-31"
+
+    @patch('handlers.handler.execute_query')
+    def test_list_milestones_filters_by_project(self, mock_query):
+        mock_query.return_value = {
+            "projectMilestones": {"nodes": [], "pageInfo": {"hasNextPage": False, "endCursor": None}}
+        }
+
+        list_milestones(project_id=self.PROJECT)
+
+        assert mock_query.call_args[0][1]["filter"] == {"project": {"id": {"eq": self.PROJECT}}}
+
+
+class TestErrorMessages:
+    """Linear hides the useful text in extensions.userPresentableMessage."""
+
+    def test_prefers_user_presentable_message(self):
+        from handlers.utils.errors import handle_graphql_errors
+
+        response = {
+            "errors": [{
+                "message": "Argument Validation Error",
+                "extensions": {
+                    "code": "VALIDATION_ERROR",
+                    "userPresentableMessage": "name must be shorter than or equal to 30 characters.",
+                },
+            }]
+        }
+
+        with pytest.raises(ValidationError, match="30 characters"):
+            handle_graphql_errors(response)
+
+    def test_falls_back_to_message(self):
+        from handlers.utils.errors import handle_graphql_errors
+        from handlers.utils.errors import LinearError
+
+        response = {"errors": [{"message": "Something broke", "extensions": {}}]}
+
+        with pytest.raises(LinearError, match="Something broke"):
+            handle_graphql_errors(response)
+
+
+class TestWebhookScope:
+    """Linear requires a webhook to name either one team or all public teams."""
+
+    TEAM = "123e4567-e89b-12d3-a456-426614174000"
+
+    @patch('handlers.handler.execute_query')
+    def test_rejects_no_scope(self, mock_query):
+        with pytest.raises(ValueError, match="exactly one"):
+            create_webhook(url="https://e.com")
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_rejects_both_scopes(self, mock_query):
+        with pytest.raises(ValueError, match="exactly one"):
+            create_webhook(url="https://e.com", team_id=self.TEAM, all_public_teams=True)
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_all_public_teams_scope(self, mock_query):
+        mock_query.return_value = {
+            "webhookCreate": {"success": True, "webhook": {"id": "wh-1", "url": "https://e.com"}}
+        }
+
+        create_webhook(url="https://e.com", all_public_teams=True)
+
+        assert mock_query.call_args[0][1]["input"]["allPublicTeams"] is True
+
+    @patch('handlers.handler.execute_query')
+    def test_single_team_scope(self, mock_query):
+        mock_query.return_value = {
+            "webhookCreate": {"success": True, "webhook": {"id": "wh-1", "url": "https://e.com"}}
+        }
+
+        create_webhook(url="https://e.com", team_id=self.TEAM)
+
+        input_data = mock_query.call_args[0][1]["input"]
+        assert input_data["teamId"] == self.TEAM
+        assert "allPublicTeams" not in input_data

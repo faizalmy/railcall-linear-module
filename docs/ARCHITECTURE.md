@@ -1,10 +1,29 @@
 # Architecture Document: RailCall Linear Module (Production)
 
 **Version:** 2.0.0  
-**Status:** Planning  
+**Status:** Planning — this document describes the target design, not all of which ships in 2.0.0  
 **Author:** AgentStack Labs  
 **Date:** 2026-07-26  
 **Contest:** RailCall Community Contest 2026 Q3 — Track A (Best Module)
+
+---
+
+## 0. Implementation Status
+
+What this document describes versus what version 2.0.0 actually ships:
+
+| Area | Designed here | Shipped in 2.0.0 |
+|------|---------------|------------------|
+| 35 commands | ✅ | ✅ |
+| API key auth (`LINEAR_API_KEY`, env only, never persisted) | ✅ | ✅ |
+| OAuth2 flow, `handlers/auth.py`, encrypted token file | ✅ | ❌ Not implemented — sections 3.3 and 3.4 are forward-looking |
+| Retry with capped backoff + `Retry-After` | ✅ | ✅ |
+| Metadata caching (Redis / in-memory) | ✅ | ✅ — applied to team, project, user, state and label reads only |
+| Webhook **commands** (list/create/update/delete via the Linear API) | ✅ | ✅ |
+| Webhook **receiver** (inbound signature verification, event dispatch) | ✅ | ❌ Not implemented |
+| CI (pytest matrix + flake8) | ✅ | ✅ |
+
+Anything marked ❌ is a v2.1 target. No code in this repository depends on it.
 
 ---
 
@@ -47,7 +66,7 @@
 | **Validator** | Validates inputs against `input_schema` in `module.json` |
 | **Executor** | Runs handler functions from `handlers/handler.py` |
 | **Receipt** | Ed25519-signed record of command execution |
-| **handler.py** | Implements 30 commands, calls Linear GraphQL API |
+| **handler.py** | Implements 35 commands, calls Linear GraphQL API |
 | **Linear API** | External service providing project management data |
 
 ### 1.3 Data Flow
@@ -76,7 +95,7 @@
 
 ```
 railcall-linear-module/
-├── module.json              # Manifest: 30 commands, auth, side_effects
+├── module.json              # Manifest: 35 commands, auth, side_effects
 ├── handlers/
 │   ├── __init__.py
 │   ├── handler.py           # Main entry point
@@ -120,7 +139,7 @@ railcall-linear-module/
 
 | File | Purpose | Size |
 |------|---------|------|
-| `module.json` | Declares 30 commands, auth pattern, side_effects | ~300 lines |
+| `module.json` | Declares 35 commands, auth pattern, side_effects | ~300 lines |
 | `handlers/handler.py` | Main entry point, routes to command implementations | ~100 lines |
 | `handlers/client.py` | Linear GraphQL client with retry + rate limiting | ~200 lines |
 | `handlers/auth.py` | OAuth2 flow + API key authentication | ~250 lines |
@@ -700,7 +719,7 @@ def verify_webhook_signature(payload: bytes, signature: str, webhook_id: str) ->
 | Test Type | Coverage | Execution | Purpose |
 |-----------|----------|-----------|---------|
 | **Unit Tests** | >80% code coverage | Every commit | Test individual functions in isolation |
-| **Integration Tests** | All 30 commands | Every commit | Test against Linear sandbox API |
+| **Integration Tests** | All 35 commands | Every commit | Test against Linear sandbox API |
 | **End-to-End Tests** | Critical workflows | Nightly | Test full airlock flow |
 | **Performance Tests** | Read/write latency | Weekly | Ensure SLA compliance |
 

@@ -12,7 +12,7 @@
 
 ### 1.1 What We're Building
 
-A production-grade RailCall module (`agentstack-labs/linear`) providing comprehensive governed access to Linear's project management API. The module implements 30 commands across 7 functional categories, supports OAuth2 authentication, includes caching and webhook handlers, and ships with comprehensive test coverage and CI/CD automation.
+A production-grade RailCall module (`agentstack-labs/linear`) providing comprehensive governed access to Linear's project management API. The module implements 35 commands across 10 functional categories, supports OAuth2 authentication, includes caching and webhook handlers, and ships with comprehensive test coverage and CI/CD automation.
 
 ### 1.2 Problem Statement
 
@@ -32,7 +32,7 @@ Linear is referenced in 20+ RailCall workflow templates but no standalone module
 
 | Criterion | Metric | Target |
 |-----------|--------|--------|
-| Command coverage | Full API surface | 30 commands across 7 categories |
+| Command coverage | Full API surface | 35 commands across 10 categories |
 | Authentication | OAuth2 + API key | Both supported |
 | Test coverage | Unit + integration | >80% code coverage |
 | Performance | Cached reads | <200ms for cached operations |
@@ -48,7 +48,7 @@ Linear is referenced in 20+ RailCall workflow templates but no standalone module
 
 ### 2.1 Functional Requirements
 
-#### FR-1: Command Categories (30 commands)
+#### FR-1: Command Categories (35 commands)
 
 **Priority:** P0 (must have)
 
@@ -135,7 +135,7 @@ Transaction support for multi-issue operations.
 **Priority:** P0 (must have)
 
 **Acceptance criteria:**
-- Unit tests for all 30 commands (>80% coverage)
+- Unit tests for all 35 commands (>80% coverage)
 - Integration tests against Linear sandbox
 - Mock API responses for offline testing
 - Test fixtures for common scenarios
@@ -157,7 +157,7 @@ Transaction support for multi-issue operations.
 **Priority:** P0 (must have)
 
 **Acceptance criteria:**
-- API reference for all 30 commands
+- API reference for all 35 commands
 - Installation guide (OAuth2 + API key)
 - Usage examples for common workflows
 - Troubleshooting guide

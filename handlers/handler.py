@@ -1,30 +1,68 @@
 """RailCall Linear Module - Production Grade
 
-A comprehensive Linear integration for RailCall with 30 commands covering:
-- Issue management (create, update, delete, list, get, search, bulk_update, link)
-- Team management (list, get, create, update)
-- Project management (list, get, create, update)
-- User management (list, get)
-- Workflow states (list, create, update)
-- Labels (list, create, update)
-- Cycles (list, get, create, update)
-- Comments (list, create, update, delete)
-- Webhooks (list, create, update, delete)
-- Milestones (list, create, update)
+A comprehensive Linear integration for RailCall with 35 commands covering:
+- Issue management (8): list, get, create, update, delete, search, bulk_update, link
+- Team management (2): list, get
+- Project management (2): list, get
+- User management (2): list, get
+- Workflow states (3): list, create, update
+- Labels (3): list, create, update
+- Cycles (4): list, get, create, update
+- Comments (4): list, create, update, delete
+- Webhooks (4): list, create, update, delete
+- Milestones (3): list, create, update
 
 All commands support:
-- Automatic retry with exponential backoff
-- Rate limiting protection
+- Automatic retry with capped exponential backoff and Retry-After support
 - Input validation
-- Caching (Redis or memory)
 - Comprehensive error handling
+
+Read commands for workspace metadata (teams, projects, users, states, labels)
+are cached for METADATA_TTL seconds; issue and comment reads are never cached.
 """
 
 from typing import Any, Dict, List, Optional
 
 from .client import execute_query
-from .queries import *
+from .cache import cached, invalidate_all
+from .queries import (
+    LIST_ISSUES,
+    GET_ISSUE,
+    CREATE_ISSUE,
+    UPDATE_ISSUE,
+    DELETE_ISSUE,
+    CREATE_ISSUE_RELATION,
+    LIST_TEAMS,
+    GET_TEAM,
+    LIST_PROJECTS,
+    GET_PROJECT,
+    LIST_USERS,
+    GET_USER,
+    LIST_STATES,
+    CREATE_STATE,
+    UPDATE_STATE,
+    LIST_LABELS,
+    CREATE_LABEL,
+    UPDATE_LABEL,
+    LIST_CYCLES,
+    GET_CYCLE,
+    CREATE_CYCLE,
+    UPDATE_CYCLE,
+    LIST_COMMENTS,
+    CREATE_COMMENT,
+    UPDATE_COMMENT,
+    DELETE_COMMENT,
+    LIST_WEBHOOKS,
+    CREATE_WEBHOOK,
+    UPDATE_WEBHOOK,
+    DELETE_WEBHOOK,
+    LIST_MILESTONES,
+    CREATE_MILESTONE,
+    UPDATE_MILESTONE,
+)
 from .utils import (
+    LinearError,
+    RateLimitError,
     validate_issue_id,
     validate_team_id,
     validate_project_id,
@@ -32,10 +70,27 @@ from .utils import (
     validate_state_id,
     validate_label_id,
     validate_cycle_id,
+    validate_comment_id,
+    validate_milestone_id,
+    validate_webhook_id,
     validate_priority,
     validate_limit,
+    validate_url,
+    validate_color,
+    validate_iso_date,
+    validate_timeless_date,
+    validate_resource_types,
+    validate_non_empty,
     paginate_query,
 )
+
+# Cache lifetime for workspace metadata that rarely changes between calls.
+METADATA_TTL = 300
+
+
+def _run_query(query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
+    """Adapter matching paginate_query's query_func signature."""
+    return execute_query(query, variables)
 
 
 # ============================================================================
@@ -76,11 +131,8 @@ def list_issues(
         validate_user_id(assignee_id)
         issue_filter["assignee"] = {"id": {"eq": assignee_id}}
 
-    def query_func(query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
-        return execute_query(query, variables)
-
     issues = paginate_query(
-        query_func=query_func,
+        query_func=_run_query,
         query=LIST_ISSUES,
         variables={"filter": issue_filter} if issue_filter else {},
         limit=limit,
@@ -141,6 +193,7 @@ def create_issue(
         Dict with created issue
     """
     validate_team_id(team_id)
+    validate_non_empty(title, "title")
     if priority is not None:
         validate_priority(priority)
     if assignee_id:
@@ -153,7 +206,7 @@ def create_issue(
         for label_id in label_ids:
             validate_label_id(label_id)
     
-    input_data = {
+    input_data: Dict[str, Any] = {
         "teamId": team_id,
         "title": title,
     }
@@ -205,6 +258,8 @@ def update_issue(
         Dict with updated issue
     """
     validate_issue_id(issue_id)
+    if title is not None:
+        validate_non_empty(title, "title")
     if priority is not None:
         validate_priority(priority)
     if assignee_id:
@@ -214,9 +269,9 @@ def update_issue(
     if label_ids:
         for label_id in label_ids:
             validate_label_id(label_id)
-    
-    input_data = {}
-    
+
+    input_data: Dict[str, Any] = {}
+
     if title is not None:
         input_data["title"] = title
     if description is not None:
@@ -340,7 +395,7 @@ def bulk_update_issues(
         for label_id in label_ids:
             validate_label_id(label_id)
     
-    input_data = {}
+    input_data: Dict[str, Any] = {}
     if state_id is not None:
         input_data["stateId"] = state_id
     if assignee_id is not None:
@@ -353,24 +408,48 @@ def bulk_update_issues(
     if not input_data:
         raise ValueError("No fields to update")
     
-    results = []
-    errors = []
-    
-    for issue_id in issue_ids:
+    results: List[str] = []
+    errors: List[Dict[str, Any]] = []
+
+    for index, issue_id in enumerate(issue_ids):
         try:
             result = execute_query(UPDATE_ISSUE, {"id": issue_id, "input": input_data})
             if result.get("issueUpdate", {}).get("success"):
                 results.append(issue_id)
             else:
                 errors.append({"issue_id": issue_id, "error": "Update failed"})
-        except Exception as e:
+        except RateLimitError as e:
+            # The client already retried this one. Continuing at full speed would
+            # burn the rest of the batch against the same closed window, so stop
+            # and report exactly which IDs were never attempted.
+            remaining = issue_ids[index:]
+            errors.extend(
+                {"issue_id": pending, "error": "Not attempted - rate limit reached"}
+                for pending in remaining
+            )
+            return {
+                "updated": results,
+                "failed": errors,
+                "success_count": len(results),
+                "failure_count": len(errors),
+                "rate_limited": True,
+                "not_attempted": remaining,
+                "message": (
+                    f"Stopped after {len(results)} of {len(issue_ids)} updates: {e}. "
+                    f"Re-run with the not_attempted IDs once the limit resets."
+                ),
+            }
+        except LinearError as e:
             errors.append({"issue_id": issue_id, "error": str(e)})
-    
+        except Exception as e:  # noqa: BLE001 - one bad ID must not abort the batch
+            errors.append({"issue_id": issue_id, "error": str(e)})
+
     return {
         "updated": results,
         "failed": errors,
         "success_count": len(results),
         "failure_count": len(errors),
+        "rate_limited": False,
     }
 
 
@@ -408,7 +487,7 @@ def link_issues(
     else:
         source_id, target_id, relation_type = issue_id, related_issue_id, relationship_type
 
-    input_data = {
+    input_data: Dict[str, Any] = {
         "issueId": source_id,
         "relatedIssueId": target_id,
         "type": relation_type,
@@ -432,6 +511,7 @@ def link_issues(
 # TEAM COMMANDS (2 commands)
 # ============================================================================
 
+@cached(ttl=METADATA_TTL)
 def list_teams(limit: int = 50, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """List all teams in the workspace.
     
@@ -442,13 +522,10 @@ def list_teams(limit: int = 50, context: Optional[Dict[str, Any]] = None) -> Dic
     Returns:
         Dict with teams list
     """
-    validate_limit(limit, max_limit=250)
-    
-    def query_func(query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
-        return execute_query(query, variables)
-    
+    limit = validate_limit(limit, max_limit=250)
+
     teams = paginate_query(
-        query_func=query_func,
+        query_func=_run_query,
         query=LIST_TEAMS,
         variables={},
         limit=limit,
@@ -461,6 +538,7 @@ def list_teams(limit: int = 50, context: Optional[Dict[str, Any]] = None) -> Dic
     }
 
 
+@cached(ttl=METADATA_TTL)
 def get_team(team_id: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Get detailed information about a specific team.
     
@@ -485,6 +563,7 @@ def get_team(team_id: str, context: Optional[Dict[str, Any]] = None) -> Dict[str
 # PROJECT COMMANDS (2 commands)
 # ============================================================================
 
+@cached(ttl=METADATA_TTL)
 def list_projects(limit: int = 50, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """List all projects in the workspace.
     
@@ -495,13 +574,10 @@ def list_projects(limit: int = 50, context: Optional[Dict[str, Any]] = None) -> 
     Returns:
         Dict with projects list
     """
-    validate_limit(limit, max_limit=250)
-    
-    def query_func(query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
-        return execute_query(query, variables)
-    
+    limit = validate_limit(limit, max_limit=250)
+
     projects = paginate_query(
-        query_func=query_func,
+        query_func=_run_query,
         query=LIST_PROJECTS,
         variables={},
         limit=limit,
@@ -514,6 +590,7 @@ def list_projects(limit: int = 50, context: Optional[Dict[str, Any]] = None) -> 
     }
 
 
+@cached(ttl=METADATA_TTL)
 def get_project(project_id: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Get detailed information about a specific project.
     
@@ -538,6 +615,7 @@ def get_project(project_id: str, context: Optional[Dict[str, Any]] = None) -> Di
 # USER COMMANDS (2 commands)
 # ============================================================================
 
+@cached(ttl=METADATA_TTL)
 def list_users(limit: int = 50, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """List all users in the workspace.
     
@@ -548,13 +626,10 @@ def list_users(limit: int = 50, context: Optional[Dict[str, Any]] = None) -> Dic
     Returns:
         Dict with users list
     """
-    validate_limit(limit, max_limit=250)
-    
-    def query_func(query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
-        return execute_query(query, variables)
-    
+    limit = validate_limit(limit, max_limit=250)
+
     users = paginate_query(
-        query_func=query_func,
+        query_func=_run_query,
         query=LIST_USERS,
         variables={},
         limit=limit,
@@ -567,6 +642,7 @@ def list_users(limit: int = 50, context: Optional[Dict[str, Any]] = None) -> Dic
     }
 
 
+@cached(ttl=METADATA_TTL)
 def get_user(user_id: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Get detailed information about a specific user.
     
@@ -591,6 +667,7 @@ def get_user(user_id: str, context: Optional[Dict[str, Any]] = None) -> Dict[str
 # STATE COMMANDS (3 commands)
 # ============================================================================
 
+@cached(ttl=METADATA_TTL)
 def list_states(
     team_id: Optional[str] = None,
     limit: int = 50,
@@ -613,11 +690,8 @@ def list_states(
         validate_team_id(team_id)
         state_filter["team"] = {"id": {"eq": team_id}}
 
-    def query_func(query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
-        return execute_query(query, variables)
-
     states = paginate_query(
-        query_func=query_func,
+        query_func=_run_query,
         query=LIST_STATES,
         variables={"filter": state_filter} if state_filter else {},
         limit=limit,
@@ -634,7 +708,7 @@ def create_state(
     team_id: str,
     name: str,
     color: str,
-    state_type: str = "triage",
+    state_type: str = "backlog",
     context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Create a new workflow state.
@@ -643,18 +717,25 @@ def create_state(
         team_id: Team ID (required)
         name: State name (required)
         color: Color hex code (required)
-        state_type: State type (triage, backlog, unstarted, started, completed, canceled)
+        state_type: State type (backlog, unstarted, started, completed, canceled).
+            Linear does not accept 'triage' here - triage is a per-team singleton
+            enabled in team settings, not a state you create.
         context: RailCall context (unused)
     
     Returns:
         Dict with created state
     """
     validate_team_id(team_id)
+    validate_non_empty(name, "name")
+    validate_color(color)
+
+    if state_type not in ["backlog", "unstarted", "started", "completed", "canceled"]:
+        raise ValueError(
+            "state_type must be one of: backlog, unstarted, started, completed, canceled. "
+            "Linear rejects 'triage' - it is enabled in team settings, not created as a state."
+        )
     
-    if state_type not in ["triage", "backlog", "unstarted", "started", "completed", "canceled"]:
-        raise ValueError("state_type must be one of: triage, backlog, unstarted, started, completed, canceled")
-    
-    input_data = {
+    input_data: Dict[str, Any] = {
         "teamId": team_id,
         "name": name,
         "color": color,
@@ -665,7 +746,9 @@ def create_state(
     
     if not result.get("workflowStateCreate", {}).get("success"):
         raise ValueError("Failed to create state")
-    
+
+    invalidate_all("list_states")
+
     return {"state": result["workflowStateCreate"]["workflowState"]}
 
 
@@ -687,8 +770,12 @@ def update_state(
         Dict with updated state
     """
     validate_state_id(state_id)
-    
-    input_data = {}
+    if name is not None:
+        validate_non_empty(name, "name")
+    if color is not None:
+        validate_color(color)
+
+    input_data: Dict[str, Any] = {}
     if name is not None:
         input_data["name"] = name
     if color is not None:
@@ -701,7 +788,9 @@ def update_state(
     
     if not result.get("workflowStateUpdate", {}).get("success"):
         raise ValueError("Failed to update state")
-    
+
+    invalidate_all("list_states")
+
     return {"state": result["workflowStateUpdate"]["workflowState"]}
 
 
@@ -709,6 +798,7 @@ def update_state(
 # LABEL COMMANDS (3 commands)
 # ============================================================================
 
+@cached(ttl=METADATA_TTL)
 def list_labels(
     team_id: Optional[str] = None,
     limit: int = 50,
@@ -731,11 +821,8 @@ def list_labels(
         validate_team_id(team_id)
         label_filter["team"] = {"id": {"eq": team_id}}
 
-    def query_func(query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
-        return execute_query(query, variables)
-
     labels = paginate_query(
-        query_func=query_func,
+        query_func=_run_query,
         query=LIST_LABELS,
         variables={"filter": label_filter} if label_filter else {},
         limit=limit,
@@ -768,8 +855,10 @@ def create_label(
         Dict with created label
     """
     validate_team_id(team_id)
-    
-    input_data = {
+    validate_non_empty(name, "name")
+    validate_color(color)
+
+    input_data: Dict[str, Any] = {
         "teamId": team_id,
         "name": name,
         "color": color,
@@ -782,7 +871,9 @@ def create_label(
     
     if not result.get("issueLabelCreate", {}).get("success"):
         raise ValueError("Failed to create label")
-    
+
+    invalidate_all("list_labels")
+
     return {"label": result["issueLabelCreate"]["issueLabel"]}
 
 
@@ -806,8 +897,12 @@ def update_label(
         Dict with updated label
     """
     validate_label_id(label_id)
-    
-    input_data = {}
+    if name is not None:
+        validate_non_empty(name, "name")
+    if color is not None:
+        validate_color(color)
+
+    input_data: Dict[str, Any] = {}
     if name is not None:
         input_data["name"] = name
     if color is not None:
@@ -822,7 +917,9 @@ def update_label(
     
     if not result.get("issueLabelUpdate", {}).get("success"):
         raise ValueError("Failed to update label")
-    
+
+    invalidate_all("list_labels")
+
     return {"label": result["issueLabelUpdate"]["issueLabel"]}
 
 
@@ -848,11 +945,8 @@ def list_cycles(
     validate_team_id(team_id)
     limit = validate_limit(limit, max_limit=250)
 
-    def query_func(query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
-        return execute_query(query, variables)
-
     cycles = paginate_query(
-        query_func=query_func,
+        query_func=_run_query,
         query=LIST_CYCLES,
         variables={"filter": {"team": {"id": {"eq": team_id}}}},
         limit=limit,
@@ -905,8 +999,12 @@ def create_cycle(
         Dict with created cycle
     """
     validate_team_id(team_id)
-    
-    input_data = {
+    validate_iso_date(starts_at, "starts_at")
+    validate_iso_date(ends_at, "ends_at")
+    if starts_at >= ends_at:
+        raise ValueError("starts_at must be earlier than ends_at")
+
+    input_data: Dict[str, Any] = {
         "teamId": team_id,
         "startsAt": starts_at,
         "endsAt": ends_at,
@@ -943,8 +1041,16 @@ def update_cycle(
         Dict with updated cycle
     """
     validate_cycle_id(cycle_id)
-    
-    input_data = {}
+    if name is not None:
+        validate_non_empty(name, "name")
+    if starts_at is not None:
+        validate_iso_date(starts_at, "starts_at")
+    if ends_at is not None:
+        validate_iso_date(ends_at, "ends_at")
+    if starts_at is not None and ends_at is not None and starts_at >= ends_at:
+        raise ValueError("starts_at must be earlier than ends_at")
+
+    input_data: Dict[str, Any] = {}
     if name is not None:
         input_data["name"] = name
     if starts_at is not None:
@@ -983,15 +1089,12 @@ def list_comments(
         Dict with comments list
     """
     validate_issue_id(issue_id)
-    validate_limit(limit, max_limit=250)
-    
-    def query_func(query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
-        return execute_query(query, variables)
-    
+    limit = validate_limit(limit, max_limit=250)
+
     comments = paginate_query(
-        query_func=query_func,
+        query_func=_run_query,
         query=LIST_COMMENTS,
-        variables={"issueId": issue_id},
+        variables={"filter": {"issue": {"id": {"eq": issue_id}}}},
         limit=limit,
         data_key="comments",
     )
@@ -1018,8 +1121,9 @@ def create_comment(
         Dict with created comment
     """
     validate_issue_id(issue_id)
-    
-    input_data = {
+    validate_non_empty(body, "body")
+
+    input_data: Dict[str, Any] = {
         "issueId": issue_id,
         "body": body,
     }
@@ -1047,8 +1151,11 @@ def update_comment(
     Returns:
         Dict with updated comment
     """
+    validate_comment_id(comment_id)
+    validate_non_empty(body, "body")
+
     input_data = {"body": body}
-    
+
     result = execute_query(UPDATE_COMMENT, {"id": comment_id, "input": input_data})
     
     if not result.get("commentUpdate", {}).get("success"):
@@ -1070,6 +1177,8 @@ def delete_comment(
     Returns:
         Dict with success status
     """
+    validate_comment_id(comment_id)
+
     result = execute_query(DELETE_COMMENT, {"id": comment_id})
     
     if not result.get("commentDelete", {}).get("success"):
@@ -1092,13 +1201,10 @@ def list_webhooks(limit: int = 50, context: Optional[Dict[str, Any]] = None) -> 
     Returns:
         Dict with webhooks list
     """
-    validate_limit(limit, max_limit=250)
-    
-    def query_func(query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
-        return execute_query(query, variables)
-    
+    limit = validate_limit(limit, max_limit=250)
+
     webhooks = paginate_query(
-        query_func=query_func,
+        query_func=_run_query,
         query=LIST_WEBHOOKS,
         variables={},
         limit=limit,
@@ -1113,26 +1219,60 @@ def list_webhooks(limit: int = 50, context: Optional[Dict[str, Any]] = None) -> 
 
 def create_webhook(
     url: str,
+    resource_types: Optional[List[str]] = None,
     enabled: bool = True,
+    label: Optional[str] = None,
+    team_id: Optional[str] = None,
+    all_public_teams: bool = False,
     context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Create a new webhook.
-    
+
     Args:
         url: Webhook URL (required)
+        resource_types: Resources to subscribe to (required by Linear).
+            Defaults to ["Issue", "Comment"]. Other values include IssueLabel,
+            Project, ProjectUpdate, Cycle, Reaction, Document, Initiative.
         enabled: Whether webhook is enabled (default: True)
+        label: Optional human-readable name shown in Linear settings
+        team_id: Scope the webhook to a single team
+        all_public_teams: Subscribe to every public team instead of one team.
+            Linear requires exactly one of team_id or all_public_teams.
         context: RailCall context (unused)
-    
+
     Returns:
         Dict with created webhook
     """
-    from .utils import validate_url
     validate_url(url)
-    
-    input_data = {
+
+    if resource_types is None:
+        resource_types = ["Issue", "Comment"]
+    validate_resource_types(resource_types)
+
+    if team_id:
+        validate_team_id(team_id)
+
+    # Linear requires a scope and offers no default: a webhook is either bound to
+    # one team or to all public teams.
+    if bool(team_id) == all_public_teams:
+        raise ValueError(
+            "Provide exactly one of team_id or all_public_teams=True - "
+            "Linear needs to know which teams the webhook covers."
+        )
+
+    input_data: Dict[str, Any] = {
         "url": url,
+        "resourceTypes": resource_types,
         "enabled": enabled,
     }
+
+    if label is not None:
+        validate_non_empty(label, "label")
+        input_data["label"] = label
+    if team_id:
+        input_data["teamId"] = team_id
+    if all_public_teams:
+        input_data["allPublicTeams"] = True
     
     result = execute_query(CREATE_WEBHOOK, {"input": input_data})
     
@@ -1159,10 +1299,9 @@ def update_webhook(
     Returns:
         Dict with updated webhook
     """
-    from .utils import validate_webhook_id, validate_url
     validate_webhook_id(webhook_id)
     
-    input_data = {}
+    input_data: Dict[str, Any] = {}
     if url is not None:
         validate_url(url)
         input_data["url"] = url
@@ -1193,7 +1332,6 @@ def delete_webhook(
     Returns:
         Dict with success status
     """
-    from .utils import validate_webhook_id
     validate_webhook_id(webhook_id)
     
     result = execute_query(DELETE_WEBHOOK, {"id": webhook_id})
@@ -1208,29 +1346,39 @@ def delete_webhook(
 # MILESTONE COMMANDS (3 commands)
 # ============================================================================
 
-def list_milestones(limit: int = 50, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """List all milestones.
-    
+def list_milestones(
+    project_id: Optional[str] = None,
+    limit: int = 50,
+    context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """List project milestones.
+
+    Linear has no workspace-wide milestone concept - every milestone belongs to
+    a project. Omit project_id to list milestones across all projects.
+
     Args:
+        project_id: Optional project filter
         limit: Maximum number of results (default: 50)
         context: RailCall context (unused)
-    
+
     Returns:
         Dict with milestones list
     """
-    validate_limit(limit, max_limit=250)
-    
-    def query_func(query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
-        return execute_query(query, variables)
-    
+    limit = validate_limit(limit, max_limit=250)
+
+    milestone_filter: Dict[str, Any] = {}
+    if project_id:
+        validate_project_id(project_id)
+        milestone_filter["project"] = {"id": {"eq": project_id}}
+
     milestones = paginate_query(
-        query_func=query_func,
+        query_func=_run_query,
         query=LIST_MILESTONES,
-        variables={},
+        variables={"filter": milestone_filter} if milestone_filter else {},
         limit=limit,
-        data_key="milestones",
+        data_key="projectMilestones",
     )
-    
+
     return {
         "milestones": milestones,
         "count": len(milestones),
@@ -1238,36 +1386,44 @@ def list_milestones(limit: int = 50, context: Optional[Dict[str, Any]] = None) -
 
 
 def create_milestone(
+    project_id: str,
     name: str,
-    target_date: str,
+    target_date: Optional[str] = None,
     description: Optional[str] = None,
     context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Create a new milestone.
-    
+    """Create a new project milestone.
+
     Args:
+        project_id: Project the milestone belongs to (required by Linear)
         name: Milestone name (required)
-        target_date: Target date (ISO 8601)
+        target_date: Target date. Linear stores this as a TimelessDate, so an
+            ISO datetime is truncated to its date part (YYYY-MM-DD).
         description: Milestone description
         context: RailCall context (unused)
-    
+
     Returns:
         Dict with created milestone
     """
-    input_data = {
+    validate_project_id(project_id)
+    validate_non_empty(name, "name")
+
+    input_data: Dict[str, Any] = {
+        "projectId": project_id,
         "name": name,
-        "targetDate": target_date,
     }
-    
+
+    if target_date is not None:
+        input_data["targetDate"] = validate_timeless_date(target_date, "target_date")
     if description is not None:
         input_data["description"] = description
-    
+
     result = execute_query(CREATE_MILESTONE, {"input": input_data})
-    
-    if not result.get("milestoneCreate", {}).get("success"):
+
+    if not result.get("projectMilestoneCreate", {}).get("success"):
         raise ValueError("Failed to create milestone")
-    
-    return {"milestone": result["milestoneCreate"]["milestone"]}
+
+    return {"milestone": result["projectMilestoneCreate"]["projectMilestone"]}
 
 
 def update_milestone(
@@ -1277,35 +1433,36 @@ def update_milestone(
     description: Optional[str] = None,
     context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Update an existing milestone.
-    
+    """Update an existing project milestone.
+
     Args:
         milestone_id: Milestone ID (required)
         name: New name
-        target_date: New target date
+        target_date: New target date (truncated to YYYY-MM-DD)
         description: New description
         context: RailCall context (unused)
-    
+
     Returns:
         Dict with updated milestone
     """
-    from .utils import validate_milestone_id
     validate_milestone_id(milestone_id)
-    
-    input_data = {}
+    if name is not None:
+        validate_non_empty(name, "name")
+
+    input_data: Dict[str, Any] = {}
     if name is not None:
         input_data["name"] = name
     if target_date is not None:
-        input_data["targetDate"] = target_date
+        input_data["targetDate"] = validate_timeless_date(target_date, "target_date")
     if description is not None:
         input_data["description"] = description
-    
+
     if not input_data:
         raise ValueError("No fields to update")
-    
+
     result = execute_query(UPDATE_MILESTONE, {"id": milestone_id, "input": input_data})
-    
-    if not result.get("milestoneUpdate", {}).get("success"):
+
+    if not result.get("projectMilestoneUpdate", {}).get("success"):
         raise ValueError("Failed to update milestone")
-    
-    return {"milestone": result["milestoneUpdate"]["milestone"]}
+
+    return {"milestone": result["projectMilestoneUpdate"]["projectMilestone"]}

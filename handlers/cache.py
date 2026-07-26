@@ -1,24 +1,28 @@
 """Caching layer with Redis and in-memory fallback."""
 
+import hashlib
 import os
 import json
 import time
-from typing import Any, Optional, Dict
+from typing import Any, Callable, Dict, Optional
 from functools import wraps
 
 
 class CacheBackend:
     """Base cache backend interface."""
-    
+
     def get(self, key: str) -> Optional[Any]:
         raise NotImplementedError
-    
+
     def set(self, key: str, value: Any, ttl: int = 300) -> None:
         raise NotImplementedError
-    
+
     def delete(self, key: str) -> None:
         raise NotImplementedError
-    
+
+    def delete_prefix(self, prefix: str) -> int:
+        raise NotImplementedError
+
     def clear(self) -> None:
         raise NotImplementedError
 
@@ -26,7 +30,7 @@ class CacheBackend:
 class MemoryCache(CacheBackend):
     """In-memory cache with TTL support."""
     
-    def __init__(self):
+    def __init__(self) -> None:
         self._cache: Dict[str, Dict[str, Any]] = {}
     
     def get(self, key: str) -> Optional[Any]:
@@ -60,7 +64,14 @@ class MemoryCache(CacheBackend):
     def delete(self, key: str) -> None:
         """Delete key from cache."""
         self._cache.pop(key, None)
-    
+
+    def delete_prefix(self, prefix: str) -> int:
+        """Delete every key starting with prefix. Returns the number removed."""
+        doomed = [k for k in self._cache if k.startswith(prefix)]
+        for key in doomed:
+            del self._cache[key]
+        return len(doomed)
+
     def clear(self) -> None:
         """Clear all cache entries."""
         self._cache.clear()
@@ -69,11 +80,22 @@ class MemoryCache(CacheBackend):
 class RedisCache(CacheBackend):
     """Redis cache backend."""
     
-    def __init__(self, host: str = "localhost", port: int = 6379, db: int = 0):
+    def __init__(
+        self,
+        host: str = "localhost",
+        port: int = 6379,
+        db: int = 0,
+        url: Optional[str] = None,
+    ) -> None:
         try:
             import redis
-            self._client = redis.Redis(host=host, port=port, db=db, decode_responses=True)
-            self._client.ping()  # Test connection
+            client: Any = (
+                redis.Redis.from_url(url, decode_responses=True)
+                if url
+                else redis.Redis(host=host, port=port, db=db, decode_responses=True)
+            )
+            client.ping()  # Test connection
+            self._client = client
         except Exception as e:
             raise RuntimeError(f"Failed to connect to Redis: {e}")
     
@@ -82,7 +104,7 @@ class RedisCache(CacheBackend):
         value = self._client.get(key)
         if value is None:
             return None
-        return json.loads(value)
+        return json.loads(str(value))
     
     def set(self, key: str, value: Any, ttl: int = 300) -> None:
         """Set value in Redis with TTL."""
@@ -95,7 +117,16 @@ class RedisCache(CacheBackend):
     def delete(self, key: str) -> None:
         """Delete key from Redis."""
         self._client.delete(key)
-    
+
+    def delete_prefix(self, prefix: str) -> int:
+        """Delete every key starting with prefix. Returns the number removed."""
+        removed = 0
+        # scan_iter avoids blocking the server the way KEYS would
+        for key in self._client.scan_iter(match=f"{prefix}*", count=500):
+            self._client.delete(key)
+            removed += 1
+        return removed
+
     def clear(self) -> None:
         """Clear all keys (use with caution)."""
         self._client.flushdb()
@@ -104,12 +135,13 @@ class RedisCache(CacheBackend):
 class CacheManager:
     """Cache manager with automatic backend selection."""
     
-    def __init__(self, backend: Optional[str] = None):
+    def __init__(self, backend: Optional[str] = None) -> None:
         """Initialize cache manager.
         
         Args:
             backend: Cache backend ('redis', 'memory', or None for auto-detect)
         """
+        self._backend: CacheBackend
         if backend == "redis":
             self._backend = self._create_redis_backend()
         elif backend == "memory":
@@ -122,7 +154,15 @@ class CacheManager:
                 self._backend = MemoryCache()
     
     def _create_redis_backend(self) -> RedisCache:
-        """Create Redis backend from environment variables."""
+        """Create Redis backend from environment variables.
+
+        REDIS_URL is the documented setting; REDIS_HOST/PORT/DB remain supported
+        for deployments that pass the parts separately.
+        """
+        url = os.environ.get("REDIS_URL")
+        if url:
+            return RedisCache(url=url)
+
         host = os.environ.get("REDIS_HOST", "localhost")
         port = int(os.environ.get("REDIS_PORT", "6379"))
         db = int(os.environ.get("REDIS_DB", "0"))
@@ -139,7 +179,11 @@ class CacheManager:
     def delete(self, key: str) -> None:
         """Delete key from cache."""
         self._backend.delete(key)
-    
+
+    def delete_prefix(self, prefix: str) -> int:
+        """Delete every key starting with prefix. Returns the number removed."""
+        return self._backend.delete_prefix(prefix)
+
     def clear(self) -> None:
         """Clear all cache entries."""
         self._backend.clear()
@@ -157,32 +201,71 @@ def get_cache() -> CacheManager:
     return _cache
 
 
-def cached(ttl: int = 300):
+def cache_namespace() -> str:
+    """Namespace prefix identifying the credential the cache entries belong to.
+
+    A shared Redis instance may serve several Linear workspaces. Without this,
+    two tenants running the same command with the same arguments would collide
+    on one key and read each other's data. The key is hashed, never stored raw.
+    """
+    api_key = os.environ.get("LINEAR_API_KEY", "")
+    digest = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16]
+    return f"linear:{digest}"
+
+
+def make_cache_key(func_name: str, args: tuple, kwargs: Dict[str, Any]) -> str:
+    """Build a tenant-scoped cache key for a call.
+
+    The RailCall `context` argument is excluded - it carries per-invocation data
+    that would otherwise make every key unique and defeat the cache.
+    """
+    parts = [cache_namespace(), func_name]
+    parts.extend(str(arg) for arg in args)
+    parts.extend(
+        f"{k}={v}" for k, v in sorted(kwargs.items()) if k != "context"
+    )
+    return ":".join(parts)
+
+
+def invalidate(func_name: str) -> int:
+    """Drop every cached entry for one command. Returns the number removed."""
+    return get_cache().delete_prefix(f"{cache_namespace()}:{func_name}:")
+
+
+def invalidate_all(*func_names: str) -> None:
+    """Drop cached entries for several commands after a write."""
+    for name in func_names:
+        invalidate(name)
+
+
+def cached(ttl: int = 300) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator to cache function results.
-    
+
+    Only applied to reads of slow-changing workspace metadata (teams, projects,
+    users, states, labels). Issue and comment reads are left uncached so they
+    always reflect the current state.
+
     Args:
         ttl: Time-to-live in seconds (default: 5 minutes)
     """
-    def decorator(func):
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
-        def wrapper(*args, **kwargs):
-            # Generate cache key from function name and arguments
-            key_parts = [func.__name__]
-            key_parts.extend(str(arg) for arg in args)
-            key_parts.extend(f"{k}={v}" for k, v in sorted(kwargs.items()))
-            cache_key = ":".join(key_parts)
-            
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            cache_key = make_cache_key(func.__name__, args, kwargs)
+
             cache = get_cache()
-            
+
             # Try to get from cache
             cached_value = cache.get(cache_key)
             if cached_value is not None:
                 return cached_value
-            
+
             # Execute function and cache result
             result = func(*args, **kwargs)
             cache.set(cache_key, result, ttl)
-            
+
             return result
+
+        setattr(wrapper, "invalidate", lambda: invalidate(func.__name__))
         return wrapper
     return decorator

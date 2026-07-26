@@ -48,3 +48,6 @@ jobs:
 
       - name: Lint
         run: flake8 handlers/ tests/
+
+      - name: Type check
+        run: mypy handlers/

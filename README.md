@@ -2,12 +2,12 @@
 
 <div align="center">
 
-**Production-grade Linear integration for RailCall with 30 commands**
+**Production-grade Linear integration for RailCall with 35 commands**
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/unit%20tests-63%20passed-brightgreen.svg)](./tests/)
-[![Coverage](https://img.shields.io/badge/coverage-64%25-yellow.svg)](./tests/)
+[![Tests](https://img.shields.io/badge/unit%20tests-114%20passed-brightgreen.svg)](./tests/)
+[![Coverage](https://img.shields.io/badge/coverage-74%25-yellowgreen.svg)](./tests/)
 
 *Comprehensive Linear integration with automatic retry, rate limiting, caching, and enterprise-grade error handling*
 
@@ -34,13 +34,13 @@
 
 ## 🎯 Overview
 
-The RailCall Linear Module provides a complete, production-ready integration with Linear's project management platform. Built for enterprise use, it offers 30 commands across 7 categories with built-in resilience, caching, and comprehensive error handling.
+The RailCall Linear Module provides a complete, production-ready integration with Linear's project management platform. Built for enterprise use, it offers 35 commands across 10 categories with built-in resilience, caching, and comprehensive error handling.
 
 **Key Benefits:**
-- ✅ **30 Commands** - Full coverage of Linear's API surface
-- ✅ **Automatic Retry** - Exponential backoff with jitter for transient failures
+- ✅ **35 Commands** - Full coverage of Linear's API surface
+- ✅ **Automatic Retry** - Capped exponential backoff with jitter, honoring `Retry-After`
 - ✅ **Rate Limiting** - Built-in protection against Linear's API limits (50 req/10s)
-- ✅ **Caching** - Redis or in-memory caching for improved performance
+- ✅ **Caching** - Redis or in-memory, per-workspace scoped, for metadata reads
 - ✅ **Input Validation** - Comprehensive validation for all parameters
 - ✅ **Error Handling** - Detailed error messages with actionable guidance
 - ✅ **Pagination** - Automatic pagination for large result sets
@@ -68,10 +68,10 @@ The RailCall Linear Module provides a complete, production-ready integration wit
 
 ### Production Features
 
-- **Resilience**: Automatic retry with exponential backoff
-- **Performance**: Redis/in-memory caching with 5-minute TTL
+- **Resilience**: Single-layer retry with capped backoff and `Retry-After` support
+- **Performance**: Redis/in-memory metadata caching with 5-minute TTL
 - **Observability**: Comprehensive logging and error reporting
-- **Security**: API key authentication with secure storage
+- **Security**: API key read from the environment only, never persisted or logged
 - **Reliability**: Input validation and error handling
 
 ---
@@ -276,17 +276,33 @@ export REDIS_URL="redis://localhost:6379"
 ```
 
 **Cache Behavior:**
-- **TTL**: 5 minutes (configurable in code)
-- **Invalidation**: Automatic on write operations
+- **What is cached**: workspace metadata only — `list_teams`, `get_team`,
+  `list_projects`, `get_project`, `list_users`, `get_user`, `list_states`,
+  `list_labels`. Issue and comment reads are never cached, so they always
+  reflect current state.
+- **TTL**: 5 minutes (`METADATA_TTL` in `handlers/handler.py`)
+- **Invalidation**: `create_state`/`update_state` clear the state list;
+  `create_label`/`update_label` clear the label list
+- **Isolation**: keys are namespaced by a SHA-256 prefix of `LINEAR_API_KEY`,
+  so one shared Redis can serve several workspaces without cross-reads.
+  The raw key is never written to the cache.
 - **Fallback**: Automatically falls back to in-memory if Redis unavailable
+- **Configuration**: `REDIS_URL`, or `REDIS_HOST`/`REDIS_PORT`/`REDIS_DB`
 
 ### Rate Limiting
 
-Automatic rate limiting with exponential backoff:
-- **Max retries**: 3
-- **Backoff factor**: 2 seconds
-- **Jitter**: ±1 second
+Retries are handled in one place (`LinearClient.execute`), so a single command
+never sends more than 4 requests:
+- **Max retries**: 3 (4 attempts total)
+- **Backoff**: capped exponential with full jitter — `random(0, min(2^n, 60))` seconds
+- **Retry-After**: honored when Linear sends it on a 429
+- **Retried**: 429 and network failures only. Authentication, validation,
+  permission and not-found errors fail immediately.
 - **Linear API limit**: 50 requests per 10 seconds
+
+`bulk_update_issues` stops as soon as it hits a rate limit and returns the IDs
+it never attempted under `not_attempted`, so a retry can resume exactly where
+it left off.
 
 ### Error Handling
 
@@ -315,7 +331,7 @@ Large result sets are automatically paginated:
 
 ```
 railcall-linear-module/
-├── module.json              # Module manifest with 30 commands
+├── module.json              # Module manifest with 35 commands
 ├── handlers/
 │   ├── handler.py           # Main handler with all commands
 │   ├── client.py            # Linear GraphQL client with retry logic
@@ -325,7 +341,7 @@ railcall-linear-module/
 │       ├── errors.py        # Error handling utilities
 │       ├── validation.py    # Input validation
 │       └── pagination.py    # Pagination utilities
-├── tests/                   # Test suite (63 unit + 35 integration)
+├── tests/                   # Test suite (114 unit + 35 integration)
 ├── docs/                    # Documentation
 └── .github/workflows/       # CI/CD pipeline
 ```
@@ -514,7 +530,7 @@ This module is submitted to the **RailCall Community Contest 2026 Q3**.
 |--------|--------|
 | Version | 2.0.0 |
 | Commands | 30 |
-| Test Coverage | 63 unit tests passing, 64% line coverage |
+| Test Coverage | 114 unit tests passing, 74% line coverage |
 | Python Support | 3.9+ |
 | License | MIT |
 | Production Ready | ✅ Yes |

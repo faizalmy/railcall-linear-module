@@ -259,20 +259,18 @@ mutation($input: ProjectCreateInput!) {
     project {
       id
       name
+      description
       state
-    }
-  }
-}
-"""
-
-UPDATE_PROJECT = """
-mutation($id: String!, $input: ProjectUpdateInput!) {
-  projectUpdate(id: $id, input: $input) {
-    success
-    project {
-      id
-      name
-      state
+      startDate
+      targetDate
+      teams {
+        nodes {
+          id
+          name
+          key
+        }
+      }
+      createdAt
     }
   }
 }
@@ -497,8 +495,8 @@ mutation($id: String!, $input: CycleUpdateInput!) {
 
 # Comment queries
 LIST_COMMENTS = """
-query($issueId: String!, $first: Int, $after: String) {
-  comments(filter: { issue: { id: { eq: $issueId } } }, first: $first, after: $after) {
+query($first: Int, $after: String, $filter: CommentFilter) {
+  comments(first: $first, after: $after, filter: $filter) {
     nodes {
       id
       body
@@ -610,14 +608,23 @@ mutation($id: String!) {
 """
 
 # Milestone queries
+
+# Milestone queries
+# Linear models milestones as ProjectMilestone - there is no root `milestones`
+# field and no `MilestoneCreateInput`. Every milestone belongs to a project.
 LIST_MILESTONES = """
-query($first: Int, $after: String) {
-  milestones(first: $first, after: $after) {
+query($first: Int, $after: String, $filter: ProjectMilestoneFilter) {
+  projectMilestones(first: $first, after: $after, filter: $filter) {
     nodes {
       id
       name
       description
       targetDate
+      sortOrder
+      project {
+        id
+        name
+      }
       createdAt
       updatedAt
     }
@@ -630,25 +637,31 @@ query($first: Int, $after: String) {
 """
 
 CREATE_MILESTONE = """
-mutation($input: MilestoneCreateInput!) {
-  milestoneCreate(input: $input) {
+mutation($input: ProjectMilestoneCreateInput!) {
+  projectMilestoneCreate(input: $input) {
     success
-    milestone {
+    projectMilestone {
       id
       name
+      description
       targetDate
+      project {
+        id
+        name
+      }
     }
   }
 }
 """
 
 UPDATE_MILESTONE = """
-mutation($id: String!, $input: MilestoneUpdateInput!) {
-  milestoneUpdate(id: $id, input: $input) {
+mutation($id: String!, $input: ProjectMilestoneUpdateInput!) {
+  projectMilestoneUpdate(id: $id, input: $input) {
     success
-    milestone {
+    projectMilestone {
       id
       name
+      description
       targetDate
     }
   }

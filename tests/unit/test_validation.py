@@ -6,6 +6,10 @@ from handlers.utils.validation import (
     validate_priority,
     validate_limit,
     validate_url,
+    validate_color,
+    validate_iso_date,
+    validate_non_empty,
+    validate_comment_id,
 )
 from handlers.utils.errors import ValidationError
 
@@ -96,3 +100,56 @@ class TestValidateURL:
         """Should reject empty URL."""
         with pytest.raises(ValidationError, match="Invalid url format"):
             validate_url("")
+
+
+class TestColorValidation:
+    """Linear rejects non-hex colors; catch them before the round trip."""
+
+    @pytest.mark.parametrize("color", ["#FF0000", "#f00", "#AbCdEf"])
+    def test_accepts_hex(self, color):
+        validate_color(color)
+
+    @pytest.mark.parametrize("color", ["red", "FF0000", "#GG0000", "#FF00", "", None])
+    def test_rejects_non_hex(self, color):
+        with pytest.raises(ValidationError):
+            validate_color(color)
+
+
+class TestIsoDateValidation:
+    """Cycle and milestone dates must be ISO 8601."""
+
+    @pytest.mark.parametrize("value", [
+        "2026-01-31",
+        "2026-01-31T00:00:00Z",
+        "2026-01-31T12:30:00+02:00",
+    ])
+    def test_accepts_iso(self, value):
+        validate_iso_date(value, "starts_at")
+
+    @pytest.mark.parametrize("value", ["31/01/2026", "Jan 31 2026", "", "   "])
+    def test_rejects_non_iso(self, value):
+        with pytest.raises(ValidationError):
+            validate_iso_date(value, "starts_at")
+
+
+class TestNonEmptyValidation:
+    """Required text fields must carry content."""
+
+    def test_accepts_text(self):
+        validate_non_empty("Fix login", "title")
+
+    @pytest.mark.parametrize("value", ["", "   ", None])
+    def test_rejects_blank(self, value):
+        with pytest.raises(ValidationError):
+            validate_non_empty(value, "title")
+
+
+class TestCommentIdValidation:
+    """comment_id was previously accepted unchecked."""
+
+    def test_accepts_uuid(self):
+        validate_comment_id("123e4567-e89b-12d3-a456-426614174000")
+
+    def test_rejects_garbage(self):
+        with pytest.raises(ValidationError):
+            validate_comment_id("not-a-uuid")

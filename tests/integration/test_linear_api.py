@@ -38,6 +38,10 @@ pytestmark = pytest.mark.skipif(
 # Test data prefix for easy identification in Linear
 TEST_PREFIX = "[RailCall Test]"
 
+# Linear enforces uniqueness on label names and rejects overlapping cycles, so a
+# re-run must not reuse the previous run's names.
+RUN_ID = datetime.now().strftime("%m%d-%H%M%S")
+
 
 class TestIssueManagement:
     """Integration tests for issue operations - creates visible test data."""
@@ -247,15 +251,16 @@ class TestWorkflowStates:
         teams = list_teams()
         team_id = teams["teams"][0]["id"]
         
+        # Linear caps workflow state names at 30 characters
         result = create_state(
             team_id=team_id,
-            name=f"{TEST_PREFIX} Test State",
+            name=f"RC Test State {RUN_ID}"[:30],
             color="#FF6B6B",
-            state_type="triage"
+            state_type="backlog"
         )
         
         assert "state" in result
-        assert result["state"]["name"] == f"{TEST_PREFIX} Test State"
+        assert result["state"]["name"] == f"RC Test State {RUN_ID}"[:30]
         print(f"✓ Created workflow state: {result['state']['name']}")
     
     def test_03_update_test_state(self):
@@ -266,19 +271,20 @@ class TestWorkflowStates:
         states = list_states(team_id=team_id)
         test_state = next(
             (state for state in states["states"]
-             if state["name"] == f"{TEST_PREFIX} Test State"),
+             if state["name"] == f"RC Test State {RUN_ID}"[:30]),
             None
         )
+        assert test_state is not None, "state created by the previous test not found"
         
-        if test_state:
-            result = update_state(
-                state_id=test_state["id"],
-                name=f"{TEST_PREFIX} Test State (Updated)",
-                color="#4ECDC4"
-            )
-            
-            assert result["state"]["name"] == f"{TEST_PREFIX} Test State (Updated)"
-            print(f"✓ Updated workflow state: {result['state']['name']}")
+        updated_name = f"RC State Upd {RUN_ID}"[:30]
+        result = update_state(
+            state_id=test_state["id"],
+            name=updated_name,
+            color="#4ECDC4"
+        )
+        
+        assert result["state"]["name"] == updated_name
+        print(f"✓ Updated workflow state: {result['state']['name']}")
 
 
 class TestLabels:
@@ -302,7 +308,7 @@ class TestLabels:
         for i, color in enumerate(["#FF6B6B", "#4ECDC4", "#45B7D1"], 1):
             result = create_label(
                 team_id=team_id,
-                name=f"{TEST_PREFIX} Test Label {i}",
+                name=f"{TEST_PREFIX} Label {i} {RUN_ID}",
                 color=color,
                 description=f"Test label {i} created by integration tests"
             )
@@ -319,18 +325,18 @@ class TestLabels:
         labels = list_labels(team_id=team_id)
         test_label = next(
             (label for label in labels["labels"]
-             if label["name"] == f"{TEST_PREFIX} Test Label 1"),
+             if label["name"] == f"{TEST_PREFIX} Label 1 {RUN_ID}"),
             None
         )
         
         if test_label:
             result = update_label(
                 label_id=test_label["id"],
-                name=f"{TEST_PREFIX} Test Label 1 (Updated)",
+                name=f"{TEST_PREFIX} Label 1 Upd {RUN_ID}",
                 color="#96CEB4"
             )
             
-            assert result["label"]["name"] == f"{TEST_PREFIX} Test Label 1 (Updated)"
+            assert result["label"]["name"] == f"{TEST_PREFIX} Label 1 Upd {RUN_ID}"
             print(f"✓ Updated label: {result['label']['name']}")
 
 
@@ -351,19 +357,26 @@ class TestCycles:
         teams = list_teams()
         team_id = teams["teams"][0]["id"]
         
-        # Create a cycle for next week
-        starts_at = datetime.now() + timedelta(days=7)
+        # Push well past any existing cycle - Linear rejects overlapping ranges
+        existing = list_cycles(team_id=team_id)["cycles"]
+        latest_end = max(
+            (datetime.fromisoformat(cycle["endsAt"].replace("Z", "+00:00")).replace(tzinfo=None)
+             for cycle in existing if cycle.get("endsAt")),
+            default=datetime.now(),
+        )
+        starts_at = max(latest_end, datetime.now()) + timedelta(days=7)
         ends_at = starts_at + timedelta(days=14)
         
+        cycle_name = f"{TEST_PREFIX} Sprint {RUN_ID}"
         result = create_cycle(
             team_id=team_id,
-            name=f"{TEST_PREFIX} Test Sprint",
+            name=cycle_name,
             starts_at=starts_at.isoformat(),
             ends_at=ends_at.isoformat()
         )
         
         assert "cycle" in result
-        assert result["cycle"]["name"] == f"{TEST_PREFIX} Test Sprint"
+        assert result["cycle"]["name"] == cycle_name
         print(f"✓ Created cycle: {result['cycle']['name']}")
     
     def test_03_get_cycle_details(self):
@@ -374,7 +387,7 @@ class TestCycles:
         cycles = list_cycles(team_id=team_id)
         test_cycle = next(
             (cycle for cycle in cycles["cycles"]
-             if cycle["name"] == f"{TEST_PREFIX} Test Sprint"),
+             if cycle["name"] == f"{TEST_PREFIX} Sprint {RUN_ID}"),
             None
         )
         
@@ -391,17 +404,17 @@ class TestCycles:
         cycles = list_cycles(team_id=team_id)
         test_cycle = next(
             (cycle for cycle in cycles["cycles"]
-             if cycle["name"] == f"{TEST_PREFIX} Test Sprint"),
+             if cycle["name"] == f"{TEST_PREFIX} Sprint {RUN_ID}"),
             None
         )
         
         if test_cycle:
             result = update_cycle(
                 cycle_id=test_cycle["id"],
-                name=f"{TEST_PREFIX} Test Sprint (Updated)"
+                name=f"{TEST_PREFIX} Sprint Upd {RUN_ID}"
             )
             
-            assert result["cycle"]["name"] == f"{TEST_PREFIX} Test Sprint (Updated)"
+            assert result["cycle"]["name"] == f"{TEST_PREFIX} Sprint Upd {RUN_ID}"
             print(f"✓ Updated cycle: {result['cycle']['name']}")
 
 
@@ -486,6 +499,9 @@ class TestWebhooks:
         """Should create a test webhook."""
         result = create_webhook(
             url="https://webhook.site/test-railcall-integration",
+            resource_types=["Issue", "Comment"],
+            label=f"{TEST_PREFIX} {RUN_ID}",
+            all_public_teams=True,
             enabled=True
         )
         
@@ -521,17 +537,23 @@ class TestMilestones:
         print(f"✓ Listed {len(result['milestones'])} milestones")
     
     def test_02_create_test_milestone(self):
-        """Should create a test milestone."""
+        """Should create a test milestone on a project."""
+        projects = list_projects(limit=1)["projects"]
+        if not projects:
+            pytest.skip("workspace has no project to attach a milestone to")
+        
         target_date = datetime.now() + timedelta(days=90)
+        milestone_name = f"{TEST_PREFIX} Release {RUN_ID}"
         
         result = create_milestone(
-            name=f"{TEST_PREFIX} Q4 2026 Release",
-            description="Test milestone created by integration tests for Q4 2026 release planning.",
+            project_id=projects[0]["id"],
+            name=milestone_name,
+            description="Test milestone created by integration tests.",
             target_date=target_date.strftime("%Y-%m-%d")
         )
         
         assert "milestone" in result
-        assert result["milestone"]["name"] == f"{TEST_PREFIX} Q4 2026 Release"
+        assert result["milestone"]["name"] == milestone_name
         print(f"✓ Created milestone: {result['milestone']['name']}")
     
     def test_03_update_milestone(self):
@@ -539,7 +561,7 @@ class TestMilestones:
         milestones = list_milestones()
         test_milestone = next(
             (milestone for milestone in milestones["milestones"]
-             if milestone["name"] == f"{TEST_PREFIX} Q4 2026 Release"),
+             if milestone["name"] == f"{TEST_PREFIX} Release {RUN_ID}"),
             None
         )
         
@@ -547,7 +569,7 @@ class TestMilestones:
             result = update_milestone(
                 milestone_id=test_milestone["id"],
                 description=(
-                    f"{TEST_PREFIX} Updated milestone description for Q4 2026 release."
+                    f"{TEST_PREFIX} Updated milestone description."
                     f"\n\n**Updated:** {datetime.now().isoformat()}"
                 )
             )
