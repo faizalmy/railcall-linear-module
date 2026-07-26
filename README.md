@@ -34,7 +34,27 @@
 
 ## 🎯 Overview
 
-The RailCall Linear Module provides a complete, production-ready integration with Linear's project management platform. Built for enterprise use, it offers 36 commands across 10 categories with built-in resilience, caching, and comprehensive error handling.
+### The problem it solves
+
+Monday triage is death by a thousand clicks. Thirty issues arrived over the
+weekend and each needs an owner, a priority and a state — thirty round trips in
+Linear's UI. Scripting it against the API is fast but unreviewable: nobody sees
+what is about to change, and nothing records who approved it.
+
+This module stages the whole batch as one command. RailCall renders a preview, a
+human approves once, and the run emits a signed receipt naming the approver and
+the exact payload. If Linear rate-limits mid-batch it stops and returns
+`not_attempted`, so a re-run resumes where it left off instead of redoing work.
+
+**Who it's for:** small engineering teams whose triage, sprint setup and release
+bookkeeping live in Linear, and who need an audit trail because someone
+eventually asks "who closed those twelve tickets?"
+
+### Scope
+
+36 commands across 10 categories with built-in resilience, caching, and
+comprehensive error handling. 16 reads execute immediately; 20 writes are
+`write_requires_approval` and gated by the Approval Airlock.
 
 **Key Benefits:**
 - ✅ **36 Commands** - Full coverage of Linear's API surface
@@ -358,6 +378,25 @@ Large result sets are automatically paginated:
 - **Default limit**: 50 items
 - **Maximum limit**: 250 items per request
 - **Automatic**: Module handles pagination transparently
+
+---
+
+## ⚠️ Known Limitations
+
+Honest scope boundaries, so nothing surprises you after install:
+
+| Limitation | Detail |
+|------------|--------|
+| **UUIDs only** | No command accepts `ENG-123` or a team name. Start with `list_teams` and carry the ids through. |
+| **`search_issues` matches titles only** | Uses `title: { containsIgnoreCase }`. Descriptions and comments are not searched, so this is not Linear's global search. |
+| **Milestones are project-scoped** | `create_milestone` requires `project_id`. Linear has no workspace-level milestone — the type is `ProjectMilestone`. |
+| **`create_webhook` needs a scope** | Exactly one of `team_id` or `all_public_teams`, even though the manifest lists only `url` as required. |
+| **`create_state` rejects `triage`** | Triage is a per-team setting in Linear, not a creatable workflow state. Valid types: backlog, unstarted, started, completed, canceled. |
+| **State names cap at 30 characters** | Enforced server-side by Linear. |
+| **API key auth only** | No OAuth2 in this release. See [ARCHITECTURE.md §0](docs/ARCHITECTURE.md) for what is designed versus shipped. |
+| **Caching is metadata-only** | Teams, projects, users, states and labels, 5-minute TTL. Issue and comment reads are never cached so they cannot go stale. |
+| **`bulk_update_issues` is serial** | One request per issue. It stops on a rate limit and returns `not_attempted` for a clean resume. |
+| **No webhook receiver** | The webhook *commands* manage subscriptions via Linear's API. Receiving and verifying inbound events is not implemented. |
 
 ---
 

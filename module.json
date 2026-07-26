@@ -2,7 +2,7 @@
   "id": "agentstack-labs/linear",
   "version": "1.0.0",
   "name": "Linear",
-  "description": "Production-grade Linear integration with 36 commands covering issues, teams, projects, users, states, labels, cycles, comments, webhooks, and milestones. Includes automatic retry with Retry-After support, input validation, metadata caching, and comprehensive error handling.",
+  "description": "Batch-triage your Linear backlog with a human approval gate. Reassign, reprioritise and re-state dozens of issues in one command, preview the change before it fires, and keep a signed receipt of who approved what. 36 commands across issues, teams, projects, users, states, labels, cycles, comments, webhooks and milestones — all verified against the live Linear API. Reads run immediately; every write goes through the Approval Airlock. API key is read from the vault or the environment and never persisted. contest:2026Q3",
   "author": "AgentStack Labs",
   "license": "MIT",
   "publisher_pubkey": "a02b37627cdf4e585c6e72e8335ff299c9d8a3e0720281c76efbb9d06fac3959",

@@ -195,6 +195,28 @@ def mode_for(side_effects):
     return "write_requires_approval" if side_effects == "write" else "read"
 
 
+# command_registry.validate_inputs only implements array/string/number/object
+# and treats a missing type as "anything". JSON Schema's `integer` and `boolean`
+# match none of those branches, so a field declared with either is rejected for
+# EVERY value - the Semantic Firewall refuses the payload before a human can
+# approve it. Map onto the vocabulary the validator actually has:
+#   integer -> number   (validate_inputs accepts int for number; the handler
+#                        still enforces int-ness via validate_limit/priority)
+#   boolean -> omitted  (no branch exists; leaving type unset means "any", and
+#                        the handler and Linear both still reject a non-bool)
+REGISTRY_TYPES = {
+    "integer": "number",
+    "boolean": None,
+}
+
+
+def registry_type(json_schema_type):
+    """Translate a JSON Schema type into what validate_inputs understands."""
+    if json_schema_type in REGISTRY_TYPES:
+        return REGISTRY_TYPES[json_schema_type]
+    return json_schema_type
+
+
 def flat_input_schema(parameters):
     """JSON-Schema properties -> the registry's flat {field: {type, required}}."""
     properties = (parameters or {}).get("properties") or {}
@@ -202,10 +224,15 @@ def flat_input_schema(parameters):
 
     schema = {}
     for field, spec in properties.items():
-        entry = {
-            "type": spec.get("type", "string"),
-            "required": field in required,
-        }
+        entry = {"required": field in required}
+
+        declared = registry_type(spec.get("type", "string"))
+        if declared is not None:
+            entry["type"] = declared
+        # Keep the original for documentation even when the registry cannot
+        # enforce it - the Studio surfaces this to the operator.
+        if spec.get("type") and spec["type"] != declared:
+            entry["json_type"] = spec["type"]
         if spec.get("description"):
             entry["description"] = spec["description"]
         if "default" in spec:

@@ -70,10 +70,14 @@ class TestManifestShape:
         bytes.fromhex(key)
 
     def test_input_schema_is_flat(self, manifest):
-        """The registry wants {field: {type, required}}, not JSON-Schema."""
+        """The registry wants {field: {type, required}}, not JSON-Schema.
+
+        `type` is optional: a boolean field deliberately omits it, because
+        validate_inputs has no boolean branch and treats a missing type as
+        "any" (see TestRegistryTypeVocabulary).
+        """
         for command in manifest["commands"]:
             for field, spec in command["input_schema"].items():
-                assert "type" in spec, (command["id"], field)
                 assert isinstance(spec["required"], bool), (command["id"], field)
                 assert "properties" not in spec
 
@@ -325,3 +329,78 @@ class TestMarketplaceSizeLimit:
             build_bundle.flatten_sources() + build_bundle.build_adapters(manifest)
         )
         compile(minified, "handler.py", "exec")
+
+
+class TestRegistryTypeVocabulary:
+    """command_registry.validate_inputs implements only array/string/number/object.
+
+    JSON Schema's `integer` and `boolean` match no branch, so a field declared
+    with either is rejected for EVERY value - the Semantic Firewall refuses the
+    payload before a human can approve it. Emitting them made 17 of 36 commands
+    unusable through the airlock, including list_teams (via `limit`).
+    """
+
+    # Mirrors the tuple in command_registry.validate_inputs.
+    ENFORCEABLE = {"array", "string", "number", "object"}
+
+    def test_no_unenforceable_types_are_emitted(self, manifest):
+        offenders = [
+            (command["id"], field, spec["type"])
+            for command in manifest["commands"]
+            for field, spec in command["input_schema"].items()
+            if "type" in spec and spec["type"] not in self.ENFORCEABLE
+        ]
+        assert offenders == [], (
+            f"validate_inputs rejects every value for these fields: {offenders}"
+        )
+
+    def test_integer_is_mapped_to_number(self, manifest):
+        by_id = {c["id"]: c for c in manifest["commands"]}
+        priority = by_id["linear.create_issue"]["input_schema"]["priority"]
+        assert priority["type"] == "number"
+        assert priority["json_type"] == "integer", "original type kept for docs"
+
+    def test_boolean_drops_its_type(self, manifest):
+        """No boolean branch exists; a missing type means 'any' and passes."""
+        by_id = {c["id"]: c for c in manifest["commands"]}
+        enabled = by_id["linear.create_webhook"]["input_schema"]["enabled"]
+        assert "type" not in enabled
+        assert enabled["json_type"] == "boolean"
+
+    def test_an_integer_payload_would_now_validate(self, manifest):
+        """Reproduce validate_inputs against our schema, integers included."""
+        def validate(cmd, inputs):
+            for field, spec in (cmd.get("input_schema") or {}).items():
+                if spec.get("required") and (
+                    field not in inputs or inputs[field] in (None, "", [])
+                ):
+                    return f"missing required field: {field}"
+                if field in inputs:
+                    t, v = spec.get("type"), inputs[field]
+                    ok = (
+                        (t == "array" and isinstance(v, list))
+                        or (t == "string" and isinstance(v, str))
+                        or (t == "number" and isinstance(v, (int, float)))
+                        or (t == "object" and isinstance(v, dict))
+                        or (t is None)
+                    )
+                    if not ok:
+                        return f"field '{field}' must be {t}"
+            return None
+
+        by_id = {c["id"]: c for c in manifest["commands"]}
+        uuid = "123e4567-e89b-12d3-a456-426614174000"
+
+        assert validate(
+            by_id["linear.create_issue"],
+            {"team_id": uuid, "title": "Fix login", "priority": 3},
+        ) is None
+        assert validate(by_id["linear.list_teams"], {"limit": 50}) is None
+        assert validate(
+            by_id["linear.create_webhook"],
+            {"url": "https://e.com", "enabled": True},
+        ) is None
+        # Still catches a genuinely missing required field.
+        assert validate(by_id["linear.create_issue"], {"title": "x"}) == (
+            "missing required field: team_id"
+        )
