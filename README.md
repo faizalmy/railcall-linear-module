@@ -1,4 +1,4 @@
-# agentstack/linear
+# agentstack-labs/linear
 
 Linear project management integration for RailCall. Create/update issues, list teams/projects/cycles, add comments — all governed by the RailCall airlock (preview → approve → execute → signed receipt).
 
@@ -25,26 +25,26 @@ RailCall prompts for the env var on install. Keys are stored locally (127.0.0.1 
 
 ```bash
 # List all teams
-railcall run agentstack/linear.list_teams
+railcall run agentstack-labs/linear.list_teams
 
 # List issues for a team
-railcall run agentstack/linear.list_issues --team_id=abc123
+railcall run agentstack-labs/linear.list_issues --team_id=abc123
 
 # List active cycles
-railcall run agentstack/linear.list_cycles --team_id=abc123 --limit=5
+railcall run agentstack-labs/linear.list_cycles --team_id=abc123 --limit=5
 ```
 
 **Write operations** (approval required):
 
 ```bash
 # Create issue (preview shows team, title, priority before approval)
-railcall run agentstack/linear.create_issue --team_id=abc123 --title="Fix login bug" --priority=2
+railcall run agentstack-labs/linear.create_issue --team_id=abc123 --title="Fix login bug" --priority=2
 
 # Update issue state (preview shows current → new state)
-railcall run agentstack/linear.update_state --issue_id=def456 --state_id=ghi789
+railcall run agentstack-labs/linear.update_state --issue_id=def456 --state_id=ghi789
 
 # Add comment (preview shows comment body + target issue)
-railcall run agentstack/linear.add_comment --issue_id=def456 --body="Deployed to staging"
+railcall run agentstack-labs/linear.add_comment --issue_id=def456 --body="Deployed to staging"
 ```
 
 Every command emits a signed receipt at `~/.railcall/receipts/` — hash-chained, Ed25519-signed, tamper-evident.
