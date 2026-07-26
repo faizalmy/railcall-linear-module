@@ -1,0 +1,184 @@
+{
+  "slug": "agentstack-labs/linear",
+  "version": "0.1.0",
+  "publisher_pubkey": "a02b37627cdf4e585c6e72e8335ff299c9d8a3e0720281c76efbb9d06fac3959",
+  "description": "Linear project management — create/update issues, list teams/projects/cycles, add comments. Governed by RailCall airlock (preview → approve → execute → signed receipt). contest:2026Q3",
+  "auth": {
+    "type": "api_key",
+    "env_var": "LINEAR_API_KEY"
+  },
+  "commands": [
+    {
+      "name": "create_issue",
+      "description": "Create a new issue in a Linear team",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "Team ID (e.g., ENG)"
+          },
+          "title": {
+            "type": "string",
+            "description": "Issue title"
+          },
+          "description": {
+            "type": "string",
+            "description": "Issue description (optional, markdown)"
+          },
+          "priority": {
+            "type": "integer",
+            "description": "Priority 0-4 (0=none, 1=urgent, 2=high, 3=medium, 4=low)"
+          },
+          "assignee_id": {
+            "type": "string",
+            "description": "Assignee user ID (optional)"
+          }
+        },
+        "required": ["team_id", "title"]
+      },
+      "side_effects": "external"
+    },
+    {
+      "name": "update_issue",
+      "description": "Update an existing Linear issue",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "issue_id": {
+            "type": "string",
+            "description": "Issue ID (e.g., abc123-def-456)"
+          },
+          "title": {
+            "type": "string",
+            "description": "New title (optional)"
+          },
+          "state_id": {
+            "type": "string",
+            "description": "New state ID (optional)"
+          },
+          "assignee_id": {
+            "type": "string",
+            "description": "New assignee ID (optional)"
+          },
+          "priority": {
+            "type": "integer",
+            "description": "New priority 0-4 (optional)"
+          }
+        },
+        "required": ["issue_id"]
+      },
+      "side_effects": "external"
+    },
+    {
+      "name": "list_issues",
+      "description": "List issues with optional filters",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "Filter by team ID (optional)"
+          },
+          "state_id": {
+            "type": "string",
+            "description": "Filter by state ID (optional)"
+          },
+          "assignee_id": {
+            "type": "string",
+            "description": "Filter by assignee ID (optional)"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max results (default 50, max 250)"
+          }
+        },
+        "required": []
+      },
+      "side_effects": "none"
+    },
+    {
+      "name": "list_teams",
+      "description": "List all teams in workspace",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      },
+      "side_effects": "none"
+    },
+    {
+      "name": "list_projects",
+      "description": "List all projects in workspace",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Max results (default 50, max 250)"
+          }
+        },
+        "required": []
+      },
+      "side_effects": "none"
+    },
+    {
+      "name": "list_cycles",
+      "description": "List active cycles for a team",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "Team ID"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max results (default 10, max 100)"
+          }
+        },
+        "required": ["team_id"]
+      },
+      "side_effects": "none"
+    },
+    {
+      "name": "add_comment",
+      "description": "Add a comment to an issue",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "issue_id": {
+            "type": "string",
+            "description": "Issue ID (e.g., abc123-def-456)"
+          },
+          "body": {
+            "type": "string",
+            "description": "Comment body (markdown supported)"
+          }
+        },
+        "required": ["issue_id", "body"]
+      },
+      "side_effects": "external"
+    },
+    {
+      "name": "update_state",
+      "description": "Transition issue to a new state",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "issue_id": {
+            "type": "string",
+            "description": "Issue ID (e.g., abc123-def-456)"
+          },
+          "state_id": {
+            "type": "string",
+            "description": "Target state ID"
+          }
+        },
+        "required": ["issue_id", "state_id"]
+      },
+      "side_effects": "external"
+    }
+  ],
+  "license_required": false
+}
