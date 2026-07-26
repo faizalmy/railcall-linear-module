@@ -15,13 +15,15 @@ What this document describes versus what version 2.0.0 actually ships:
 | Area | Designed here | Shipped in 2.0.0 |
 |------|---------------|------------------|
 | 36 commands | ✅ | ✅ |
+| Signed module bundle the Studio loader accepts | ✅ | ✅ — built by `tools/build_bundle.py`, Ed25519-signed, all 36 commands register |
+| Credential from the station vault (`linear` provider) | ✅ | ✅ — falls back to `LINEAR_API_KEY` standalone |
 | API key auth (`LINEAR_API_KEY`, env only, never persisted) | ✅ | ✅ |
 | OAuth2 flow, `handlers/auth.py`, encrypted token file | ✅ | ❌ Not implemented — sections 3.3 and 3.4 are forward-looking |
 | Retry with capped backoff + `Retry-After` | ✅ | ✅ |
 | Metadata caching (Redis / in-memory) | ✅ | ✅ — applied to team, project, user, state and label reads only |
 | Webhook **commands** (list/create/update/delete via the Linear API) | ✅ | ✅ |
 | Webhook **receiver** (inbound signature verification, event dispatch) | ✅ | ❌ Not implemented |
-| CI (pytest matrix + flake8) | ✅ | ✅ |
+| CI (pytest matrix + flake8 + mypy) | ✅ | ✅ |
 
 Anything marked ❌ is a v2.1 target. No code in this repository depends on it.
 
@@ -72,14 +74,14 @@ Anything marked ❌ is a v2.1 target. No code in this repository depends on it.
 ### 1.3 Data Flow
 
 **Read Operation (e.g., `list_teams`):**
-1. User runs `railcall run agentstack-labs/linear.list_teams`
+1. Operator invokes `linear.list_teams` from the Studio (or over MCP)
 2. RailCall validates inputs against schema
 3. Handler checks cache → cache hit → return cached data
 4. Cache miss → execute GraphQL query → cache result → return
 5. Signed receipt emitted
 
 **Write Operation (e.g., `create_issue`):**
-1. User runs `railcall run agentstack-labs/linear.create_issue --team_id=abc123 --title="Fix bug"`
+1. Operator invokes `linear.create_issue` with `{team_id, title}` from the Studio
 2. RailCall validates inputs against schema
 3. Airlock generates preview (shows team, title, priority)
 4. User approves in terminal
@@ -1082,7 +1084,7 @@ railcall market publish . --type=module --id=agentstack-labs/linear
 
 # 5. Verify installation
 railcall market install agentstack-labs/linear
-railcall run agentstack-labs/linear.list_teams
+# Studio → Commands → linear.list_teams   (there is no `railcall run` verb)
 ```
 
 ### 10.2 Version Management
@@ -1180,7 +1182,7 @@ railcall market uninstall agentstack-labs/linear
 railcall market install agentstack-labs/linear
 
 # 3. Verify installation
-railcall run agentstack-labs/linear.list_teams
+# Studio → Commands → linear.list_teams   (there is no `railcall run` verb)
 
 # 4. (Optional) Configure OAuth2
 railcall connect linear

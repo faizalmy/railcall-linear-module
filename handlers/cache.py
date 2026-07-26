@@ -7,6 +7,8 @@ import time
 from typing import Any, Callable, Dict, Optional
 from functools import wraps
 
+from .credentials import resolve_api_key
+
 
 class CacheBackend:
     """Base cache backend interface."""
@@ -208,7 +210,7 @@ def cache_namespace() -> str:
     two tenants running the same command with the same arguments would collide
     on one key and read each other's data. The key is hashed, never stored raw.
     """
-    api_key = os.environ.get("LINEAR_API_KEY", "")
+    api_key = resolve_api_key() or ""
     digest = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16]
     return f"linear:{digest}"
 

@@ -209,7 +209,7 @@ Transaction support for multi-issue operations.
 **So that** I can triage a backlog efficiently
 
 **Acceptance criteria:**
-- Run `railcall run agentstack-labs/linear.bulk_update_issues --issue_ids=... --state_id=...`
+- Invoke `linear.bulk_update_issues` with `{issue_ids, state_id}` and approve the airlock preview
 - Airlock shows preview of all 50 changes
 - Approve → all issues updated atomically
 - Receipt includes list of updated issue IDs
@@ -222,7 +222,7 @@ Transaction support for multi-issue operations.
 **So that** I can automate incident response
 
 **Acceptance criteria:**
-- Run `railcall run agentstack-labs/linear.create_webhook --events=issue.created`
+- Invoke `linear.create_webhook` with `{url, resource_types, all_public_teams}`
 - Webhook registered with Linear
 - Issue created in Linear → webhook fires → RailCall workflow executes
 - Signed receipt for webhook delivery

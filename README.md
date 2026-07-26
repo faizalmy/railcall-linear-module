@@ -6,8 +6,8 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/unit%20tests-114%20passed-brightgreen.svg)](./tests/)
-[![Coverage](https://img.shields.io/badge/coverage-74%25-yellowgreen.svg)](./tests/)
+[![Tests](https://img.shields.io/badge/tests-163%20unit%20%2B%2047%20live-brightgreen.svg)](./tests/)
+[![Coverage](https://img.shields.io/badge/coverage-75%25-yellowgreen.svg)](./tests/)
 
 *Comprehensive Linear integration with automatic retry, rate limiting, caching, and enterprise-grade error handling*
 
@@ -87,15 +87,24 @@ The RailCall Linear Module provides a complete, production-ready integration wit
 ### Install via RailCall
 
 ```bash
-railcall module install agentstack-labs/linear
+railcall market install agentstack-labs/linear
 ```
+
+The Studio verifies the bundle's Ed25519 signature and registers its 36 commands
+on the next module reload.
 
 ### Install from Source
 
 ```bash
 git clone https://github.com/faizalmy/railcall-linear-module.git
 cd railcall-linear-module
-pip install -e .
+pip install -e ".[dev]"
+```
+
+Build and install the signed bundle straight into your local station:
+
+```bash
+python3 tools/build_bundle.py --install
 ```
 
 ---
@@ -132,42 +141,66 @@ export REDIS_URL="redis://localhost:6379/0"
 
 ## 🎬 Quick Start
 
-### List Issues
+### How commands are invoked
+
+RailCall has no `railcall run` verb. The Studio server loads installed modules,
+registers each command into its local handler table, and executes them from the
+Studio UI or over MCP. Command ids are the dotted form:
+
+| Command id | Mode |
+|------------|------|
+| `linear.list_teams` | read - runs immediately |
+| `linear.list_issues` | read - runs immediately |
+| `linear.create_issue` | write - Approval Airlock first |
+| `linear.delete_issue` | write - Approval Airlock first |
+
+Open the Studio, or wire the station into an AI client:
 
 ```bash
-railcall run agentstack-labs/linear.list_issues \
-  --team_id="team-uuid" \
-  --state_id="state-uuid" \
-  --limit=50
+railcall studio
 ```
 
-### Create an Issue
-
 ```bash
-railcall run agentstack-labs/linear.create_issue \
-  --team_id="team-uuid" \
-  --title="Fix login bug" \
-  --description="Users cannot login with SSO" \
-  --priority=2 \
-  --assignee_id="user-uuid"
+railcall mcp config claude
 ```
 
-### Bulk Update Issues
+### Configure the credential
 
-```bash
-railcall run agentstack-labs/linear.bulk_update_issues \
-  --issue_ids='["issue-1", "issue-2", "issue-3"]' \
-  --state_id="state-uuid" \
-  --priority=3
+Commands stay `not_configured` until the `linear` provider has a saved key.
+Add it in **Studio → Sends → Configure** (`api_key`, optionally `team_id`).
+Outside the Studio the module falls back to `LINEAR_API_KEY` in the environment,
+which is what the test suite uses.
+
+### Read commands
+
+16 of the 36 commands are read-only and execute without approval. Start with
+`linear.list_teams` - every other command needs a team UUID:
+
+```json
+{ "command": "linear.list_teams", "inputs": { "limit": 50 } }
 ```
 
-### Link Issues
+### Write commands
 
-```bash
-railcall run agentstack-labs/linear.link_issues \
-  --issue_id="issue-1" \
-  --related_issue_id="issue-2" \
-  --relationship_type="blocks"
+The remaining 20 are `write_requires_approval`: the Studio renders a preview,
+you approve, and the run emits a signed receipt.
+
+```json
+{ "command": "linear.create_issue",
+  "inputs": { "team_id": "<uuid>", "title": "Fix login bug", "priority": 2 } }
+```
+
+Inputs are checked against each command's declared schema before a preview is
+ever shown, so a payload missing `team_id` is rejected up front.
+
+### Using it as a library
+
+The handlers are ordinary Python and work standalone:
+
+```python
+from handlers.handler import list_teams, create_issue
+
+teams = list_teams(limit=50)
 ```
 
 ---
@@ -332,17 +365,25 @@ Large result sets are automatically paginated:
 
 ```
 railcall-linear-module/
-├── module.json              # Module manifest with 36 commands
+├── module.json              # Authoring manifest (36 commands)
+├── tools/
+│   └── build_bundle.py      # Generates + signs the RailCall bundle
+├── dist/                    # Generated bundle (gitignored)
+│   └── agentstack-labs-linear/
+│       ├── module.json      # Loader-shaped manifest (dotted command ids)
+│       ├── handlers/handler.py  # Single flat file, no relative imports
+│       └── module.sig       # Ed25519 signature over manifest + handler
 ├── handlers/
 │   ├── handler.py           # Main handler with all commands
 │   ├── client.py            # Linear GraphQL client with retry logic
+│   ├── credentials.py       # Vault-then-environment key resolution
 │   ├── cache.py             # Caching layer (Redis/memory)
 │   ├── queries.py           # GraphQL query definitions
 │   └── utils/
 │       ├── errors.py        # Error handling utilities
 │       ├── validation.py    # Input validation
 │       └── pagination.py    # Pagination utilities
-├── tests/                   # Test suite (114 unit + 35 integration)
+├── tests/                   # 163 unit + 47 live (package + generated bundle)
 ├── docs/                    # Documentation
 └── .github/workflows/       # CI/CD pipeline
 ```
@@ -531,7 +572,7 @@ This module is submitted to the **RailCall Community Contest 2026 Q3**.
 |--------|--------|
 | Version | 2.0.0 |
 | Commands | 30 |
-| Test Coverage | 114 unit tests passing, 74% line coverage |
+| Test Coverage | 163 unit (75% lines) + 47 live against a real Linear workspace |
 | Python Support | 3.9+ |
 | License | MIT |
 | Production Ready | ✅ Yes |

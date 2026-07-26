@@ -31,6 +31,9 @@ jobs:
       - name: Run unit tests
         run: pytest tests/unit --cov=handlers --cov-report=term-missing
 
+      - name: Verify the RailCall bundle builds
+        run: python tools/build_bundle.py --check
+
   lint:
     runs-on: ubuntu-latest
     steps:

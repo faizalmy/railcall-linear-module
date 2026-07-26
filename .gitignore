@@ -6,15 +6,13 @@ __pycache__/
 .Python
 build/
 develop-eggs/
-dist/
 downloads/
 eggs/
 .eggs/
 lib/
 lib64/
 parts/
-sdist/
-var/
+svar/
 wheels/
 *.egg-info/
 .installed.cfg
@@ -56,3 +54,6 @@ logs/
 *.db
 *.sqlite
 *.sqlite3
+
+# Generated RailCall bundle (rebuild with: python3 tools/build_bundle.py)
+dist/

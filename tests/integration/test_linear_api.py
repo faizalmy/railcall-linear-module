@@ -104,15 +104,16 @@ class TestIssueManagement:
             if issue["title"].startswith(TEST_PREFIX) and "Bulk Test" in issue["title"]
         ]
         
-        if len(test_issue_ids) >= 3:
-            # Update priority for all test issues
-            result = bulk_update_issues(
-                issue_ids=test_issue_ids[:3],
-                priority=1  # Urgent
-            )
-            
-            assert result["success_count"] == 3
-            print(f"✓ Bulk updated {result['success_count']} issues to priority=1")
+        assert len(test_issue_ids) >= 3, (
+            f"expected >=3 bulk-test issues from test_03, found {len(test_issue_ids)}"
+        )
+        
+        result = bulk_update_issues(issue_ids=test_issue_ids[:3], priority=1)
+        
+        assert result["success_count"] == 3
+        assert result["failure_count"] == 0
+        assert result["rate_limited"] is False
+        print(f"✓ Bulk updated {result['success_count']} issues to priority=1")
     
     def test_06_link_issues(self):
         """Should create relationships between test issues."""
@@ -122,15 +123,18 @@ class TestIssueManagement:
             if issue["title"].startswith(TEST_PREFIX)
         ]
         
-        if len(test_issues) >= 2:
-            result = link_issues(
-                issue_id=test_issues[0]["id"],
-                related_issue_id=test_issues[1]["id"],
-                relationship_type="blocks"
-            )
-            
-            assert result["success"] is True
-            print(f"✓ Linked issues: {test_issues[0]['identifier']} blocks {test_issues[1]['identifier']}")
+        assert len(test_issues) >= 2, "need two test issues to link"
+        
+        result = link_issues(
+            issue_id=test_issues[0]["id"],
+            related_issue_id=test_issues[1]["id"],
+            relationship_type="blocks"
+        )
+        
+        assert result["success"] is True
+        assert result["relationship"] == "blocks"
+        assert result["relation"]["type"] == "blocks"
+        print(f"✓ Linked issues: {test_issues[0]['identifier']} blocks {test_issues[1]['identifier']}")
     
     def test_07_get_issue_details(self):
         """Should retrieve detailed issue information."""
@@ -141,11 +145,12 @@ class TestIssueManagement:
             None
         )
         
-        if test_issue:
-            result = get_issue(issue_id=test_issue["id"])
-            assert result["issue"]["id"] == test_issue["id"]
-            assert result["issue"]["title"] == test_issue["title"]
-            print(f"✓ Retrieved issue details: {result['issue']['identifier']}")
+        assert test_issue is not None, "no test issue found from the earlier tests"
+        
+        result = get_issue(issue_id=test_issue["id"])
+        assert result["issue"]["id"] == test_issue["id"]
+        assert result["issue"]["title"] == test_issue["title"]
+        print(f"✓ Retrieved issue details: {result['issue']['identifier']}")
     
     def test_08_update_issue(self):
         """Should update a test issue."""
@@ -156,15 +161,16 @@ class TestIssueManagement:
             None
         )
         
-        if test_issue:
-            result = update_issue(
-                issue_id=test_issue["id"],
-                title=f"{TEST_PREFIX} Integration Test Issue (Updated)",
-                description="This issue has been updated by integration tests."
-            )
-            
-            assert result["issue"]["title"] == f"{TEST_PREFIX} Integration Test Issue (Updated)"
-            print(f"✓ Updated issue: {test_issue['identifier']}")
+        assert test_issue is not None, "issue created by test_02 not found"
+        
+        result = update_issue(
+            issue_id=test_issue["id"],
+            title=f"{TEST_PREFIX} Integration Test Issue (Updated)",
+            description="This issue has been updated by integration tests."
+        )
+        
+        assert result["issue"]["title"] == f"{TEST_PREFIX} Integration Test Issue (Updated)"
+        print(f"✓ Updated issue: {test_issue['identifier']}")
 
 
 class TestTeamManagement:
@@ -246,11 +252,12 @@ class TestUserManagement:
     def test_02_get_user_details(self):
         """Should get detailed user information."""
         users = list_users()
-        if len(users["users"]) > 0:
-            user_id = users["users"][0]["id"]
-            result = get_user(user_id=user_id)
-            assert "user" in result
-            print(f"✓ Retrieved user: {result['user']['name']}")
+        assert len(users["users"]) > 0, "workspace has no users"
+        
+        user_id = users["users"][0]["id"]
+        result = get_user(user_id=user_id)
+        assert result["user"]["id"] == user_id
+        print(f"✓ Retrieved user: {result['user']['name']}")
 
 
 class TestWorkflowStates:
@@ -350,15 +357,16 @@ class TestLabels:
             None
         )
         
-        if test_label:
-            result = update_label(
-                label_id=test_label["id"],
-                name=f"{TEST_PREFIX} Label 1 Upd {RUN_ID}",
-                color="#96CEB4"
-            )
-            
-            assert result["label"]["name"] == f"{TEST_PREFIX} Label 1 Upd {RUN_ID}"
-            print(f"✓ Updated label: {result['label']['name']}")
+        assert test_label is not None, "label created by the previous test not found"
+        
+        result = update_label(
+            label_id=test_label["id"],
+            name=f"{TEST_PREFIX} Label 1 Upd {RUN_ID}",
+            color="#96CEB4"
+        )
+        
+        assert result["label"]["name"] == f"{TEST_PREFIX} Label 1 Upd {RUN_ID}"
+        print(f"✓ Updated label: {result['label']['name']}")
 
 
 class TestCycles:
@@ -412,10 +420,11 @@ class TestCycles:
             None
         )
         
-        if test_cycle:
-            result = get_cycle(cycle_id=test_cycle["id"])
-            assert result["cycle"]["id"] == test_cycle["id"]
-            print(f"✓ Retrieved cycle: {result['cycle']['name']}")
+        assert test_cycle is not None, "cycle created by the previous test not found"
+        
+        result = get_cycle(cycle_id=test_cycle["id"])
+        assert result["cycle"]["id"] == test_cycle["id"]
+        print(f"✓ Retrieved cycle: {result['cycle']['name']}")
     
     def test_04_update_cycle(self):
         """Should update a test cycle."""
@@ -429,14 +438,15 @@ class TestCycles:
             None
         )
         
-        if test_cycle:
-            result = update_cycle(
-                cycle_id=test_cycle["id"],
-                name=f"{TEST_PREFIX} Sprint Upd {RUN_ID}"
-            )
-            
-            assert result["cycle"]["name"] == f"{TEST_PREFIX} Sprint Upd {RUN_ID}"
-            print(f"✓ Updated cycle: {result['cycle']['name']}")
+        assert test_cycle is not None, "cycle created by test_02 not found"
+        
+        result = update_cycle(
+            cycle_id=test_cycle["id"],
+            name=f"{TEST_PREFIX} Sprint Upd {RUN_ID}"
+        )
+        
+        assert result["cycle"]["name"] == f"{TEST_PREFIX} Sprint Upd {RUN_ID}"
+        print(f"✓ Updated cycle: {result['cycle']['name']}")
 
 
 class TestComments:
@@ -451,17 +461,19 @@ class TestComments:
             None
         )
         
-        if test_issue:
-            result = create_comment(
-                issue_id=test_issue["id"],
-                body=(
-                    f"{TEST_PREFIX} This is a test comment created by integration tests."
-                    f"\n\n**Timestamp:** {datetime.now().isoformat()}"
-                )
+        assert test_issue is not None, "no test issue to comment on"
+        
+        result = create_comment(
+            issue_id=test_issue["id"],
+            body=(
+                f"{TEST_PREFIX} This is a test comment created by integration tests."
+                f"\n\n**Timestamp:** {datetime.now().isoformat()}"
             )
-            
-            assert "comment" in result
-            print(f"✓ Created comment on issue: {test_issue['identifier']}")
+        )
+        
+        assert result["comment"]["id"]
+        assert TEST_PREFIX in result["comment"]["body"]
+        print(f"✓ Created comment on issue: {test_issue['identifier']}")
     
     def test_02_list_comments(self):
         """Should list comments on an issue."""
@@ -472,10 +484,14 @@ class TestComments:
             None
         )
         
-        if test_issue:
-            result = list_comments(issue_id=test_issue["id"])
-            assert "comments" in result
-            print(f"✓ Listed {len(result['comments'])} comments on issue: {test_issue['identifier']}")
+        assert test_issue is not None, "no test issue to list comments on"
+        
+        result = list_comments(issue_id=test_issue["id"])
+        assert result["count"] == len(result["comments"])
+        assert any(TEST_PREFIX in c["body"] for c in result["comments"]), (
+            "the comment created by the previous test is missing from the list"
+        )
+        print(f"✓ Listed {len(result['comments'])} comments on issue: {test_issue['identifier']}")
     
     def test_03_update_comment(self):
         """Should update a test comment."""
@@ -486,25 +502,24 @@ class TestComments:
             None
         )
         
-        if test_issue:
-            comments = list_comments(issue_id=test_issue["id"])
-            test_comment = next(
-                (comment for comment in comments["comments"]
-                 if TEST_PREFIX in comment["body"]),
-                None
-            )
-            
-            if test_comment:
-                result = update_comment(
-                    comment_id=test_comment["id"],
-                    body=(
-                        f"{TEST_PREFIX} This comment has been updated by integration tests."
-                        f"\n\n**Updated:** {datetime.now().isoformat()}"
-                    )
-                )
-                
-                assert "comment" in result
-                print(f"✓ Updated comment on issue: {test_issue['identifier']}")
+        assert test_issue is not None, "no test issue to update a comment on"
+        
+        comments = list_comments(issue_id=test_issue["id"])
+        test_comment = next(
+            (comment for comment in comments["comments"]
+             if TEST_PREFIX in comment["body"]),
+            None
+        )
+        assert test_comment is not None, "comment created by test_01 not found"
+        
+        new_body = (
+            f"{TEST_PREFIX} This comment has been updated by integration tests."
+            f"\n\n**Updated:** {datetime.now().isoformat()}"
+        )
+        result = update_comment(comment_id=test_comment["id"], body=new_body)
+        
+        assert result["comment"]["body"] == new_body
+        print(f"✓ Updated comment on issue: {test_issue['identifier']}")
 
 
 class TestCommentDeletion:

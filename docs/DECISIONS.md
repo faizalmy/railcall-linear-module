@@ -395,6 +395,8 @@ railcall market install agentstack-labs/linear
 ## Usage
 
 # List teams
+# SUPERSEDED 2026-07-26: the RailCall CLI has no `run` verb. Commands are
+# registered by the Studio module loader and invoked from Studio or MCP.
 railcall run agentstack-labs/linear.list_teams
 
 # Create issue (approval required)

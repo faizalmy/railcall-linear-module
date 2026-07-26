@@ -1,12 +1,12 @@
 {
   "id": "agentstack-labs/linear",
-  "version": "2.0.0",
+  "version": "0.1.1",
   "name": "Linear",
   "description": "Production-grade Linear integration with 36 commands covering issues, teams, projects, users, states, labels, cycles, comments, webhooks, and milestones. Includes automatic retry with Retry-After support, input validation, metadata caching, and comprehensive error handling.",
   "author": "AgentStack Labs",
   "license": "MIT",
   "publisher_pubkey": "a02b37627cdf4e585c6e72e8335ff299c9d8a3e0720281c76efbb9d06fac3959",
-  "category": "Productivity",
+  "category": "Eng",
   "tags": [
     "project-management",
     "issue-tracker",
