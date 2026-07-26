@@ -172,3 +172,47 @@ class TestCachedCommands:
         refreshed = list_labels(team_id=team_id)
 
         assert refreshed["count"] == 2
+
+
+class TestZeroArgInvalidation:
+    """A no-argument cached call must still be reachable by invalidate()."""
+
+    def test_key_ends_with_a_separator(self):
+        from handlers.cache import make_cache_key
+
+        with patch.dict(os.environ, {"LINEAR_API_KEY": "k"}):
+            key = make_cache_key("list_projects", (), {})
+            prefix = make_cache_key("list_projects", (), {}).rsplit(":", 1)[0] + ":"
+
+        assert key.startswith(prefix)
+
+    @patch('handlers.handler.execute_query')
+    def test_no_arg_list_is_invalidated_by_a_write(self, mock_query):
+        """list_states() with no team filter must not survive create_state."""
+        from handlers.handler import list_states, create_state
+
+        mock_query.return_value = {
+            "workflowStates": {
+                "nodes": [{"id": "s-1", "name": "Todo"}],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            }
+        }
+        list_states()
+        assert mock_query.call_count == 1
+
+        mock_query.return_value = {
+            "workflowStateCreate": {"success": True, "workflowState": {"id": "s-2", "name": "Doing"}}
+        }
+        create_state(
+            team_id="123e4567-e89b-12d3-a456-426614174000",
+            name="Doing",
+            color="#FF0000",
+        )
+
+        mock_query.return_value = {
+            "workflowStates": {
+                "nodes": [{"id": "s-1", "name": "Todo"}, {"id": "s-2", "name": "Doing"}],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            }
+        }
+        assert list_states()["count"] == 2

@@ -219,12 +219,14 @@ def make_cache_key(func_name: str, args: tuple, kwargs: Dict[str, Any]) -> str:
     The RailCall `context` argument is excluded - it carries per-invocation data
     that would otherwise make every key unique and defeat the cache.
     """
-    parts = [cache_namespace(), func_name]
-    parts.extend(str(arg) for arg in args)
+    parts = [str(arg) for arg in args]
     parts.extend(
         f"{k}={v}" for k, v in sorted(kwargs.items()) if k != "context"
     )
-    return ":".join(parts)
+    # The separator after func_name is always emitted, including for a no-argument
+    # call. Without it a key like "...:list_projects" would not match the
+    # "...:list_projects:" prefix that invalidate() deletes.
+    return f"{cache_namespace()}:{func_name}:" + ":".join(parts)
 
 
 def invalidate(func_name: str) -> int:

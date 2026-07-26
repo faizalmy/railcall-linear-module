@@ -15,6 +15,7 @@ from handlers.handler import (
     get_team,
     list_projects,
     get_project,
+    create_project,
     list_users,
     get_user,
     list_states,
@@ -849,3 +850,90 @@ class TestWebhookScope:
         input_data = mock_query.call_args[0][1]["input"]
         assert input_data["teamId"] == self.TEAM
         assert "allPublicTeams" not in input_data
+
+
+class TestCreateProject:
+    """ProjectCreateInput requires name and a non-empty teamIds list."""
+
+    TEAM = "123e4567-e89b-12d3-a456-426614174000"
+    USER = "123e4567-e89b-12d3-a456-426614174001"
+
+    def _response(self):
+        return {
+            "projectCreate": {
+                "success": True,
+                "project": {"id": "proj-1", "name": "Apollo", "state": "planned"},
+            }
+        }
+
+    @patch('handlers.handler.execute_query')
+    def test_creates_with_minimum_fields(self, mock_query):
+        mock_query.return_value = self._response()
+
+        result = create_project(team_ids=[self.TEAM], name="Apollo")
+
+        assert mock_query.call_args[0][1]["input"] == {"teamIds": [self.TEAM], "name": "Apollo"}
+        assert result["project"]["name"] == "Apollo"
+
+    @patch('handlers.handler.execute_query')
+    def test_dates_are_truncated_to_timeless_dates(self, mock_query):
+        """startDate/targetDate are TimelessDate, not datetimes."""
+        mock_query.return_value = self._response()
+
+        create_project(
+            team_ids=[self.TEAM],
+            name="Apollo",
+            start_date="2026-08-01T00:00:00Z",
+            target_date="2026-12-31",
+        )
+
+        input_data = mock_query.call_args[0][1]["input"]
+        assert input_data["startDate"] == "2026-08-01"
+        assert input_data["targetDate"] == "2026-12-31"
+
+    @patch('handlers.handler.execute_query')
+    def test_rejects_empty_team_ids(self, mock_query):
+        with pytest.raises(ValueError, match="at least one team"):
+            create_project(team_ids=[], name="Apollo")
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_rejects_blank_name(self, mock_query):
+        with pytest.raises(ValidationError):
+            create_project(team_ids=[self.TEAM], name="  ")
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_rejects_bad_team_id(self, mock_query):
+        with pytest.raises(ValidationError):
+            create_project(team_ids=["not-a-uuid"], name="Apollo")
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_raises_when_api_reports_failure(self, mock_query):
+        mock_query.return_value = {"projectCreate": {"success": False}}
+
+        with pytest.raises(ValueError, match="Failed to create project"):
+            create_project(team_ids=[self.TEAM], name="Apollo")
+
+    @patch('handlers.handler.execute_query')
+    def test_invalidates_the_project_list_cache(self, mock_query):
+        """A stale list_projects must not survive a create."""
+        from handlers.handler import list_projects
+
+        mock_query.return_value = {
+            "projects": {"nodes": [], "pageInfo": {"hasNextPage": False, "endCursor": None}}
+        }
+        list_projects()
+        assert mock_query.call_count == 1
+
+        mock_query.return_value = self._response()
+        create_project(team_ids=[self.TEAM], name="Apollo")
+
+        mock_query.return_value = {
+            "projects": {
+                "nodes": [{"id": "proj-1", "name": "Apollo"}],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            }
+        }
+        assert list_projects()["count"] == 1

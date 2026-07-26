@@ -14,7 +14,7 @@ What this document describes versus what version 2.0.0 actually ships:
 
 | Area | Designed here | Shipped in 2.0.0 |
 |------|---------------|------------------|
-| 35 commands | ✅ | ✅ |
+| 36 commands | ✅ | ✅ |
 | API key auth (`LINEAR_API_KEY`, env only, never persisted) | ✅ | ✅ |
 | OAuth2 flow, `handlers/auth.py`, encrypted token file | ✅ | ❌ Not implemented — sections 3.3 and 3.4 are forward-looking |
 | Retry with capped backoff + `Retry-After` | ✅ | ✅ |
@@ -66,7 +66,7 @@ Anything marked ❌ is a v2.1 target. No code in this repository depends on it.
 | **Validator** | Validates inputs against `input_schema` in `module.json` |
 | **Executor** | Runs handler functions from `handlers/handler.py` |
 | **Receipt** | Ed25519-signed record of command execution |
-| **handler.py** | Implements 35 commands, calls Linear GraphQL API |
+| **handler.py** | Implements 36 commands, calls Linear GraphQL API |
 | **Linear API** | External service providing project management data |
 
 ### 1.3 Data Flow
@@ -95,7 +95,7 @@ Anything marked ❌ is a v2.1 target. No code in this repository depends on it.
 
 ```
 railcall-linear-module/
-├── module.json              # Manifest: 35 commands, auth, side_effects
+├── module.json              # Manifest: 36 commands, auth, side_effects
 ├── handlers/
 │   ├── __init__.py
 │   ├── handler.py           # Main entry point
@@ -139,7 +139,7 @@ railcall-linear-module/
 
 | File | Purpose | Size |
 |------|---------|------|
-| `module.json` | Declares 35 commands, auth pattern, side_effects | ~300 lines |
+| `module.json` | Declares 36 commands, auth pattern, side_effects | ~300 lines |
 | `handlers/handler.py` | Main entry point, routes to command implementations | ~100 lines |
 | `handlers/client.py` | Linear GraphQL client with retry + rate limiting | ~200 lines |
 | `handlers/auth.py` | OAuth2 flow + API key authentication | ~250 lines |
@@ -719,7 +719,7 @@ def verify_webhook_signature(payload: bytes, signature: str, webhook_id: str) ->
 | Test Type | Coverage | Execution | Purpose |
 |-----------|----------|-----------|---------|
 | **Unit Tests** | >80% code coverage | Every commit | Test individual functions in isolation |
-| **Integration Tests** | All 35 commands | Every commit | Test against Linear sandbox API |
+| **Integration Tests** | All 36 commands | Every commit | Test against Linear sandbox API |
 | **End-to-End Tests** | Critical workflows | Nightly | Test full airlock flow |
 | **Performance Tests** | Read/write latency | Weekly | Ensure SLA compliance |
 

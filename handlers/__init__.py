@@ -1,6 +1,6 @@
 """RailCall Linear Module - Production Grade
 
-A comprehensive Linear integration for RailCall with 35 commands.
+A comprehensive Linear integration for RailCall with 36 commands.
 """
 
 from .handler import *

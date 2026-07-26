@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**Production-grade Linear integration for RailCall with 35 commands**
+**Production-grade Linear integration for RailCall with 36 commands**
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -34,10 +34,10 @@
 
 ## 🎯 Overview
 
-The RailCall Linear Module provides a complete, production-ready integration with Linear's project management platform. Built for enterprise use, it offers 35 commands across 10 categories with built-in resilience, caching, and comprehensive error handling.
+The RailCall Linear Module provides a complete, production-ready integration with Linear's project management platform. Built for enterprise use, it offers 36 commands across 10 categories with built-in resilience, caching, and comprehensive error handling.
 
 **Key Benefits:**
-- ✅ **35 Commands** - Full coverage of Linear's API surface
+- ✅ **36 Commands** - Full coverage of Linear's API surface
 - ✅ **Automatic Retry** - Capped exponential backoff with jitter, honoring `Retry-After`
 - ✅ **Rate Limiting** - Built-in protection against Linear's API limits (50 req/10s)
 - ✅ **Caching** - Redis or in-memory, per-workspace scoped, for metadata reads
@@ -194,12 +194,13 @@ railcall run agentstack-labs/linear.link_issues \
 | `list_teams` | List all teams in the workspace | none |
 | `get_team` | Get detailed information about a specific team | none |
 
-### Project Management (2 commands)
+### Project Management (3 commands)
 
 | Command | Description | Side Effects |
 |---------|-------------|--------------|
 | `list_projects` | List all projects in the workspace | none |
 | `get_project` | Get detailed information about a specific project | none |
+| `create_project` | Create a new project | write |
 
 ### User Management (2 commands)
 
@@ -331,7 +332,7 @@ Large result sets are automatically paginated:
 
 ```
 railcall-linear-module/
-├── module.json              # Module manifest with 35 commands
+├── module.json              # Module manifest with 36 commands
 ├── handlers/
 │   ├── handler.py           # Main handler with all commands
 │   ├── client.py            # Linear GraphQL client with retry logic

@@ -1,9 +1,9 @@
 """RailCall Linear Module - Production Grade
 
-A comprehensive Linear integration for RailCall with 35 commands covering:
+A comprehensive Linear integration for RailCall with 36 commands covering:
 - Issue management (8): list, get, create, update, delete, search, bulk_update, link
 - Team management (2): list, get
-- Project management (2): list, get
+- Project management (3): list, get, create
 - User management (2): list, get
 - Workflow states (3): list, create, update
 - Labels (3): list, create, update
@@ -36,6 +36,7 @@ from .queries import (
     GET_TEAM,
     LIST_PROJECTS,
     GET_PROJECT,
+    CREATE_PROJECT,
     LIST_USERS,
     GET_USER,
     LIST_STATES,
@@ -560,7 +561,7 @@ def get_team(team_id: str, context: Optional[Dict[str, Any]] = None) -> Dict[str
 
 
 # ============================================================================
-# PROJECT COMMANDS (2 commands)
+# PROJECT COMMANDS (3 commands)
 # ============================================================================
 
 @cached(ttl=METADATA_TTL)
@@ -609,6 +610,71 @@ def get_project(project_id: str, context: Optional[Dict[str, Any]] = None) -> Di
         raise ValueError(f"Project not found: {project_id}")
     
     return {"project": result["project"]}
+
+
+def create_project(
+    team_ids: List[str],
+    name: str,
+    description: Optional[str] = None,
+    lead_id: Optional[str] = None,
+    start_date: Optional[str] = None,
+    target_date: Optional[str] = None,
+    priority: Optional[int] = None,
+    context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Create a new project.
+
+    Args:
+        team_ids: Teams the project belongs to (required, at least one)
+        name: Project name (required)
+        description: Project description
+        lead_id: User ID of the project lead
+        start_date: Start date. Stored as a TimelessDate, so an ISO datetime is
+            truncated to its date part (YYYY-MM-DD).
+        target_date: Target date, same handling as start_date
+        priority: Priority (0=none, 1=urgent, 2=high, 3=medium, 4=low)
+        context: RailCall context (unused)
+
+    Returns:
+        Dict with created project
+    """
+    if not team_ids:
+        raise ValueError("team_ids cannot be empty - a project needs at least one team")
+
+    for team_id in team_ids:
+        validate_team_id(team_id)
+
+    validate_non_empty(name, "name")
+
+    if lead_id:
+        validate_user_id(lead_id)
+    if priority is not None:
+        validate_priority(priority)
+
+    input_data: Dict[str, Any] = {
+        "teamIds": team_ids,
+        "name": name,
+    }
+
+    if description is not None:
+        input_data["description"] = description
+    if lead_id:
+        input_data["leadId"] = lead_id
+    if start_date is not None:
+        input_data["startDate"] = validate_timeless_date(start_date, "start_date")
+    if target_date is not None:
+        input_data["targetDate"] = validate_timeless_date(target_date, "target_date")
+    if priority is not None:
+        input_data["priority"] = priority
+
+    result = execute_query(CREATE_PROJECT, {"input": input_data})
+
+    if not result.get("projectCreate", {}).get("success"):
+        raise ValueError("Failed to create project")
+
+    invalidate_all("list_projects")
+
+    return {"project": result["projectCreate"]["project"]}
 
 
 # ============================================================================

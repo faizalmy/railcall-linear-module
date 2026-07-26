@@ -10,7 +10,7 @@ from handlers.handler import (
     # Teams
     list_teams, get_team,
     # Projects
-    list_projects, get_project,
+    list_projects, get_project, create_project,
     # Users
     list_users, get_user,
     # States
@@ -201,14 +201,35 @@ class TestProjectManagement:
         for project in result["projects"][:5]:  # Show first 5
             print(f"  - {project['name']}")
     
-    def test_02_get_project_details(self):
+    def test_02_create_test_project(self):
+        """Should create a test project."""
+        teams = list_teams()
+        team_id = teams["teams"][0]["id"]
+        
+        project_name = f"{TEST_PREFIX} Project {RUN_ID}"
+        result = create_project(
+            team_ids=[team_id],
+            name=project_name,
+            description="Test project created by integration tests.",
+            target_date=(datetime.now() + timedelta(days=120)).strftime("%Y-%m-%d"),
+        )
+        
+        assert "project" in result
+        assert result["project"]["name"] == project_name
+        # targetDate is a TimelessDate - confirm it actually persisted
+        assert result["project"]["targetDate"] is not None
+        print(f"✓ Created project: {result['project']['name']}")
+    
+    def test_03_get_project_details(self):
         """Should get detailed project information."""
         projects = list_projects()
-        if len(projects["projects"]) > 0:
-            project_id = projects["projects"][0]["id"]
-            result = get_project(project_id=project_id)
-            assert "project" in result
-            print(f"✓ Retrieved project: {result['project']['name']}")
+        assert len(projects["projects"]) > 0, "the previous test should have created a project"
+        
+        project_id = projects["projects"][0]["id"]
+        result = get_project(project_id=project_id)
+        assert "project" in result
+        assert "targetDate" in result["project"]
+        print(f"✓ Retrieved project: {result['project']['name']}")
 
 
 class TestUserManagement:
@@ -486,9 +507,61 @@ class TestComments:
                 print(f"✓ Updated comment on issue: {test_issue['identifier']}")
 
 
+class TestCommentDeletion:
+    """delete_comment, on a comment created solely to be deleted."""
+
+    def test_01_delete_comment(self):
+        """Should delete a comment and drop it from the issue's list."""
+        issues = list_issues(limit=100)["issues"]
+        test_issue = next(
+            (issue for issue in issues if issue["title"].startswith(TEST_PREFIX)),
+            None,
+        )
+        assert test_issue is not None, "no test issue to comment on"
+        
+        created = create_comment(
+            issue_id=test_issue["id"],
+            body=f"{TEST_PREFIX} Throwaway comment {RUN_ID} - deleted by the next assertion.",
+        )
+        comment_id = created["comment"]["id"]
+        
+        result = delete_comment(comment_id=comment_id)
+        assert result["success"] is True
+        
+        remaining = [c["id"] for c in list_comments(issue_id=test_issue["id"])["comments"]]
+        assert comment_id not in remaining
+        print(f"✓ Deleted comment: {comment_id}")
+
+
+class TestIssueDeletion:
+    """delete_issue, on an issue created solely to be deleted."""
+
+    def test_01_delete_issue(self):
+        """Should delete an issue and drop it from the issue list."""
+        teams = list_teams()
+        team_id = teams["teams"][0]["id"]
+        
+        created = create_issue(
+            team_id=team_id,
+            title=f"{TEST_PREFIX} Throwaway Issue {RUN_ID}",
+            description="Created by the integration suite purely to verify delete_issue.",
+        )
+        issue_id = created["issue"]["id"]
+        
+        result = delete_issue(issue_id=issue_id)
+        assert result["success"] is True
+        assert result["deleted_issue_id"] == issue_id
+        
+        remaining = [i["id"] for i in list_issues(limit=250)["issues"]]
+        assert issue_id not in remaining
+        print(f"✓ Deleted issue: {issue_id}")
+
+
 class TestWebhooks:
     """Integration tests for webhook operations - creates visible test data."""
-    
+
+    URL = "https://webhook.site/test-railcall-integration"
+
     def test_01_list_webhooks(self):
         """Should list all webhooks."""
         result = list_webhooks()
@@ -496,9 +569,21 @@ class TestWebhooks:
         print(f"✓ Listed {len(result['webhooks'])} webhooks")
     
     def test_02_create_test_webhook(self):
-        """Should create a test webhook."""
+        """Should create a test webhook.
+        
+        Linear enforces one webhook per URL per workspace, so a leftover from an
+        earlier run is removed first. That also exercises delete_webhook.
+        """
+        stale = [
+            webhook for webhook in list_webhooks()["webhooks"]
+            if webhook["url"] == self.URL
+        ]
+        for webhook in stale:
+            delete_webhook(webhook_id=webhook["id"])
+            print(f"✓ Deleted stale webhook: {webhook['id']}")
+        
         result = create_webhook(
-            url="https://webhook.site/test-railcall-integration",
+            url=self.URL,
             resource_types=["Issue", "Comment"],
             label=f"{TEST_PREFIX} {RUN_ID}",
             all_public_teams=True,
@@ -506,25 +591,26 @@ class TestWebhooks:
         )
         
         assert "webhook" in result
+        assert result["webhook"]["url"] == self.URL
         print(f"✓ Created webhook: {result['webhook']['url']}")
     
     def test_03_update_webhook(self):
-        """Should update a test webhook."""
+        """Should disable the test webhook."""
         webhooks = list_webhooks()
         test_webhook = next(
             (webhook for webhook in webhooks["webhooks"]
-             if "railcall" in webhook["url"]),
+             if webhook["url"] == self.URL),
             None
         )
+        assert test_webhook is not None, "webhook created by the previous test not found"
         
-        if test_webhook:
-            result = update_webhook(
-                webhook_id=test_webhook["id"],
-                enabled=False
-            )
-            
-            assert result["webhook"]["enabled"] is False
-            print(f"✓ Disabled webhook: {test_webhook['url']}")
+        result = update_webhook(
+            webhook_id=test_webhook["id"],
+            enabled=False
+        )
+        
+        assert result["webhook"]["enabled"] is False
+        print(f"✓ Disabled webhook: {test_webhook['url']}")
 
 
 class TestMilestones:
@@ -538,15 +624,18 @@ class TestMilestones:
     
     def test_02_create_test_milestone(self):
         """Should create a test milestone on a project."""
-        projects = list_projects(limit=1)["projects"]
-        if not projects:
-            pytest.skip("workspace has no project to attach a milestone to")
+        projects = list_projects()["projects"]
+        project = next(
+            (p for p in projects if p["name"] == f"{TEST_PREFIX} Project {RUN_ID}"),
+            projects[0] if projects else None,
+        )
+        assert project is not None, "no project available to attach a milestone to"
         
         target_date = datetime.now() + timedelta(days=90)
         milestone_name = f"{TEST_PREFIX} Release {RUN_ID}"
         
         result = create_milestone(
-            project_id=projects[0]["id"],
+            project_id=project["id"],
             name=milestone_name,
             description="Test milestone created by integration tests.",
             target_date=target_date.strftime("%Y-%m-%d")
@@ -565,17 +654,21 @@ class TestMilestones:
             None
         )
         
-        if test_milestone:
-            result = update_milestone(
-                milestone_id=test_milestone["id"],
-                description=(
-                    f"{TEST_PREFIX} Updated milestone description."
-                    f"\n\n**Updated:** {datetime.now().isoformat()}"
-                )
+        assert test_milestone is not None, "milestone created by the previous test not found"
+        
+        new_name = f"{TEST_PREFIX} Release {RUN_ID} Upd"
+        result = update_milestone(
+            milestone_id=test_milestone["id"],
+            name=new_name,
+            target_date=(datetime.now() + timedelta(days=120)).strftime("%Y-%m-%d"),
+            description=(
+                f"{TEST_PREFIX} Updated milestone description."
+                f"\n\n**Updated:** {datetime.now().isoformat()}"
             )
-            
-            assert "milestone" in result
-            print(f"✓ Updated milestone: {test_milestone['name']}")
+        )
+        
+        assert result["milestone"]["name"] == new_name
+        print(f"✓ Updated milestone: {result['milestone']['name']}")
 
 
 class TestCleanup:

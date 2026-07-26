@@ -221,6 +221,9 @@ query($first: Int, $after: String) {
       name
       description
       state
+      priority
+      startDate
+      targetDate
       createdAt
       updatedAt
     }
@@ -239,6 +242,13 @@ query($id: String!) {
     name
     description
     state
+    priority
+    startDate
+    targetDate
+    lead {
+      id
+      name
+    }
     teams {
       nodes {
         id
