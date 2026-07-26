@@ -1,7 +1,7 @@
 """Input validation utilities for Linear API operations."""
 
 import re
-from typing import Any, Optional
+from typing import Optional
 
 from .errors import ValidationError
 

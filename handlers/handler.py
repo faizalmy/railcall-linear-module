@@ -21,10 +21,8 @@ All commands support:
 """
 
 from typing import Any, Dict, List, Optional
-from datetime import datetime
 
 from .client import execute_query
-from .cache import cached
 from .queries import *
 from .utils import (
     validate_issue_id,
@@ -36,7 +34,6 @@ from .utils import (
     validate_cycle_id,
     validate_priority,
     validate_limit,
-    handle_graphql_errors,
     paginate_query,
 )
 
@@ -64,29 +61,28 @@ def list_issues(
     Returns:
         Dict with 'issues' list and 'page_info'
     """
-    validate_limit(limit, max_limit=250)
-    
-    # Build filter
-    filter_parts = []
+    limit = validate_limit(limit, max_limit=250)
+
+    # Build filter as an IssueFilter object (never string interpolation - the
+    # GraphQL variable is typed, and raw text would be both invalid and injectable)
+    issue_filter: Dict[str, Any] = {}
     if team_id:
         validate_team_id(team_id)
-        filter_parts.append(f'team: {{ id: {{ eq: "{team_id}" }} }}')
+        issue_filter["team"] = {"id": {"eq": team_id}}
     if state_id:
         validate_state_id(state_id)
-        filter_parts.append(f'state: {{ id: {{ eq: "{state_id}" }} }}')
+        issue_filter["state"] = {"id": {"eq": state_id}}
     if assignee_id:
         validate_user_id(assignee_id)
-        filter_parts.append(f'assignee: {{ id: {{ eq: "{assignee_id}" }} }}')
-    
-    filter_str = ", ".join(filter_parts) if filter_parts else None
-    
+        issue_filter["assignee"] = {"id": {"eq": assignee_id}}
+
     def query_func(query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
         return execute_query(query, variables)
-    
+
     issues = paginate_query(
         query_func=query_func,
         query=LIST_ISSUES,
-        variables={"filter": filter_str} if filter_str else {},
+        variables={"filter": issue_filter} if issue_filter else {},
         limit=limit,
         data_key="issues",
     )
@@ -282,28 +278,24 @@ def search_issues(
     Returns:
         Dict with matching issues
     """
-    validate_limit(limit, max_limit=250)
+    if not query or not query.strip():
+        raise ValueError("query cannot be empty")
+
+    limit = validate_limit(limit, max_limit=250)
     if team_id:
         validate_team_id(team_id)
-    
-    # Build filter with search
-    filter_parts = [f'title: {{ containsIgnoreCase: "{query}" }}']
+
+    # Search text travels as a variable value, so it is never parsed as GraphQL
+    issue_filter: Dict[str, Any] = {"title": {"containsIgnoreCase": query}}
     if team_id:
-        filter_parts.append(f'team: {{ id: {{ eq: "{team_id}" }} }}')
-    
-    filter_str = ", ".join(filter_parts)
-    
-    def query_func(q: str, variables: Dict[str, Any]) -> Dict[str, Any]:
-        return execute_query(q, variables)
-    
-    issues = paginate_query(
-        query_func=query_func,
-        query=LIST_ISSUES,
-        variables={"filter": filter_str},
-        limit=limit,
-        data_key="issues",
-    )
-    
+        issue_filter["team"] = {"id": {"eq": team_id}}
+
+    variables = {"filter": issue_filter, "first": limit}
+    result = execute_query(LIST_ISSUES, variables)
+
+    # Extract issues from the result
+    issues = result.get("issues", {}).get("nodes", [])
+
     return {
         "issues": issues,
         "count": len(issues),
@@ -401,42 +393,38 @@ def link_issues(
     """
     validate_issue_id(issue_id)
     validate_issue_id(related_issue_id)
-    
+
+    if issue_id == related_issue_id:
+        raise ValueError("Cannot link an issue to itself")
+
     if relationship_type not in ["blocks", "blocked_by", "related"]:
         raise ValueError("relationship_type must be 'blocks', 'blocked_by', or 'related'")
-    
-    # Map relationship type to Linear field
-    field_map = {
-        "blocks": "blocking",
-        "blocked_by": "blockedBy",
-        "related": "related",
+
+    # Linear models relations as first-class objects via issueRelationCreate, which
+    # adds a link without touching the issue's existing relations. The IssueRelationType
+    # enum has no "blocked_by" - it is expressed by inverting the two issues.
+    if relationship_type == "blocked_by":
+        source_id, target_id, relation_type = related_issue_id, issue_id, "blocks"
+    else:
+        source_id, target_id, relation_type = issue_id, related_issue_id, relationship_type
+
+    input_data = {
+        "issueId": source_id,
+        "relatedIssueId": target_id,
+        "type": relation_type,
     }
-    
-    field = field_map[relationship_type]
-    
-    # Get current issue to preserve existing links
-    current = execute_query(GET_ISSUE, {"id": issue_id})
-    issue = current.get("issue", {})
-    
-    # Build update input
-    input_data = {}
-    if field == "blocking":
-        existing = issue.get("blocking", {}).get("nodes", [])
-        input_data["blockingIds"] = list(set([r["id"] for r in existing] + [related_issue_id]))
-    elif field == "blockedBy":
-        existing = issue.get("blockedBy", {}).get("nodes", [])
-        input_data["blockedByIds"] = list(set([r["id"] for r in existing] + [related_issue_id]))
-    
-    result = execute_query(UPDATE_ISSUE, {"id": issue_id, "input": input_data})
-    
-    if not result.get("issueUpdate", {}).get("success"):
+
+    result = execute_query(CREATE_ISSUE_RELATION, {"input": input_data})
+
+    if not result.get("issueRelationCreate", {}).get("success"):
         raise ValueError("Failed to link issues")
-    
+
     return {
         "success": True,
         "issue_id": issue_id,
         "related_issue_id": related_issue_id,
         "relationship": relationship_type,
+        "relation": result["issueRelationCreate"].get("issueRelation"),
     }
 
 
@@ -618,21 +606,24 @@ def list_states(
     Returns:
         Dict with states list
     """
-    validate_limit(limit, max_limit=250)
+    limit = validate_limit(limit, max_limit=250)
+
+    state_filter: Dict[str, Any] = {}
     if team_id:
         validate_team_id(team_id)
-    
+        state_filter["team"] = {"id": {"eq": team_id}}
+
     def query_func(query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
         return execute_query(query, variables)
-    
+
     states = paginate_query(
         query_func=query_func,
         query=LIST_STATES,
-        variables={"teamId": team_id} if team_id else {},
+        variables={"filter": state_filter} if state_filter else {},
         limit=limit,
         data_key="workflowStates",
     )
-    
+
     return {
         "states": states,
         "count": len(states),
@@ -733,21 +724,24 @@ def list_labels(
     Returns:
         Dict with labels list
     """
-    validate_limit(limit, max_limit=250)
+    limit = validate_limit(limit, max_limit=250)
+
+    label_filter: Dict[str, Any] = {}
     if team_id:
         validate_team_id(team_id)
-    
+        label_filter["team"] = {"id": {"eq": team_id}}
+
     def query_func(query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
         return execute_query(query, variables)
-    
+
     labels = paginate_query(
         query_func=query_func,
         query=LIST_LABELS,
-        variables={"teamId": team_id} if team_id else {},
+        variables={"filter": label_filter} if label_filter else {},
         limit=limit,
         data_key="issueLabels",
     )
-    
+
     return {
         "labels": labels,
         "count": len(labels),
@@ -852,19 +846,19 @@ def list_cycles(
         Dict with cycles list
     """
     validate_team_id(team_id)
-    validate_limit(limit, max_limit=250)
-    
+    limit = validate_limit(limit, max_limit=250)
+
     def query_func(query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
         return execute_query(query, variables)
-    
+
     cycles = paginate_query(
         query_func=query_func,
         query=LIST_CYCLES,
-        variables={"teamId": team_id},
+        variables={"filter": {"team": {"id": {"eq": team_id}}}},
         limit=limit,
         data_key="cycles",
     )
-    
+
     return {
         "cycles": cycles,
         "count": len(cycles),

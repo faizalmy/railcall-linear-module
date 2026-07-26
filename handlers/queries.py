@@ -146,6 +146,26 @@ mutation($id: String!) {
 }
 """
 
+CREATE_ISSUE_RELATION = """
+mutation($input: IssueRelationCreateInput!) {
+  issueRelationCreate(input: $input) {
+    success
+    issueRelation {
+      id
+      type
+      issue {
+        id
+        identifier
+      }
+      relatedIssue {
+        id
+        identifier
+      }
+    }
+  }
+}
+"""
+
 # Team queries
 LIST_TEAMS = """
 query($first: Int, $after: String) {
@@ -298,8 +318,8 @@ query($id: String!) {
 
 # State queries
 LIST_STATES = """
-query($teamId: String, $first: Int, $after: String) {
-  workflowStates(filter: { team: { id: { eq: $teamId } } }, first: $first, after: $after) {
+query($first: Int, $after: String, $filter: WorkflowStateFilter) {
+  workflowStates(first: $first, after: $after, filter: $filter) {
     nodes {
       id
       name
@@ -350,8 +370,8 @@ mutation($id: String!, $input: WorkflowStateUpdateInput!) {
 
 # Label queries
 LIST_LABELS = """
-query($teamId: String, $first: Int, $after: String) {
-  issueLabels(filter: { team: { id: { eq: $teamId } } }, first: $first, after: $after) {
+query($first: Int, $after: String, $filter: IssueLabelFilter) {
+  issueLabels(first: $first, after: $after, filter: $filter) {
     nodes {
       id
       name
@@ -399,8 +419,8 @@ mutation($id: String!, $input: IssueLabelUpdateInput!) {
 
 # Cycle queries
 LIST_CYCLES = """
-query($teamId: String!, $first: Int, $after: String) {
-  cycles(filter: { team: { id: { eq: $teamId } } }, first: $first, after: $after) {
+query($first: Int, $after: String, $filter: CycleFilter) {
+  cycles(first: $first, after: $after, filter: $filter) {
     nodes {
       id
       number

@@ -47,14 +47,19 @@ def paginate_query(
         result_data = data.get(data_key, {})
         nodes = result_data.get(nodes_key, [])
         all_results.extend(nodes)
-        
+
         # Check for more pages
         page_info = result_data.get("pageInfo", {})
         if not page_info.get("hasNextPage"):
             break
-        
+
         cursor = page_info.get("endCursor")
-    
+
+        # Guard against a server claiming hasNextPage while returning no cursor or
+        # no rows - without this the same page refetches forever.
+        if not nodes or not cursor:
+            break
+
     return all_results[:limit]
 
 

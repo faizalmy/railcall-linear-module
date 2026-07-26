@@ -424,3 +424,183 @@ class TestMilestoneCommands:
             target_date="2026-12-31T00:00:00Z"
         )
         assert result["milestone"]["name"] == "v2.0"
+
+
+class TestGraphQLVariableShapes:
+    """Regression tests: filters must be typed objects, not interpolated strings.
+
+    Linear declares $filter as IssueFilter/WorkflowStateFilter/etc. Passing a
+    string was silently accepted by the mocks but rejected by the real API.
+    """
+
+    @patch('handlers.handler.execute_query')
+    def test_list_issues_sends_object_filter(self, mock_query):
+        """Should send a nested dict filter, never a string."""
+        mock_query.return_value = {
+            "issues": {"nodes": [], "pageInfo": {"hasNextPage": False, "endCursor": None}}
+        }
+
+        list_issues(
+            team_id="123e4567-e89b-12d3-a456-426614174000",
+            state_id="123e4567-e89b-12d3-a456-426614174001",
+            assignee_id="123e4567-e89b-12d3-a456-426614174002",
+        )
+
+        variables = mock_query.call_args[0][1]
+        assert variables["filter"] == {
+            "team": {"id": {"eq": "123e4567-e89b-12d3-a456-426614174000"}},
+            "state": {"id": {"eq": "123e4567-e89b-12d3-a456-426614174001"}},
+            "assignee": {"id": {"eq": "123e4567-e89b-12d3-a456-426614174002"}},
+        }
+
+    @patch('handlers.handler.execute_query')
+    def test_list_issues_omits_filter_when_unfiltered(self, mock_query):
+        """Should not send a null filter key when no filters are given."""
+        mock_query.return_value = {
+            "issues": {"nodes": [], "pageInfo": {"hasNextPage": False, "endCursor": None}}
+        }
+
+        list_issues()
+
+        assert "filter" not in mock_query.call_args[0][1]
+
+    @patch('handlers.handler.execute_query')
+    def test_search_issues_sends_object_filter(self, mock_query):
+        """Should pass the search term as a variable value, not query text."""
+        mock_query.return_value = {
+            "issues": {"nodes": [], "pageInfo": {"hasNextPage": False, "endCursor": None}}
+        }
+
+        search_issues(query='" } } bad { "', team_id="123e4567-e89b-12d3-a456-426614174000")
+
+        variables = mock_query.call_args[0][1]
+        assert variables["filter"]["title"] == {"containsIgnoreCase": '" } } bad { "'}
+        assert variables["filter"]["team"] == {"id": {"eq": "123e4567-e89b-12d3-a456-426614174000"}}
+
+    @patch('handlers.handler.execute_query')
+    def test_search_issues_rejects_empty_query(self, mock_query):
+        """Should reject a blank search rather than listing everything."""
+        with pytest.raises(ValueError, match="query cannot be empty"):
+            search_issues(query="   ")
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_list_states_filters_by_team(self, mock_query):
+        """Should filter root workflowStates by team instead of returning []."""
+        mock_query.return_value = {
+            "workflowStates": {
+                "nodes": [{"id": "state-1", "name": "Todo"}],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            }
+        }
+
+        result = list_states(team_id="123e4567-e89b-12d3-a456-426614174000")
+
+        variables = mock_query.call_args[0][1]
+        assert variables["filter"] == {"team": {"id": {"eq": "123e4567-e89b-12d3-a456-426614174000"}}}
+        assert result["count"] == 1
+
+    @patch('handlers.handler.execute_query')
+    def test_list_labels_filters_by_team(self, mock_query):
+        """Should filter root issueLabels by team instead of returning []."""
+        mock_query.return_value = {
+            "issueLabels": {
+                "nodes": [{"id": "label-1", "name": "Bug"}],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            }
+        }
+
+        result = list_labels(team_id="123e4567-e89b-12d3-a456-426614174000")
+
+        variables = mock_query.call_args[0][1]
+        assert variables["filter"] == {"team": {"id": {"eq": "123e4567-e89b-12d3-a456-426614174000"}}}
+        assert result["count"] == 1
+
+    @patch('handlers.handler.execute_query')
+    def test_list_cycles_filters_by_team(self, mock_query):
+        """Should query root cycles with a team filter."""
+        mock_query.return_value = {
+            "cycles": {
+                "nodes": [{"id": "cycle-1", "name": "Sprint 1"}],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            }
+        }
+
+        list_cycles(team_id="123e4567-e89b-12d3-a456-426614174000")
+
+        variables = mock_query.call_args[0][1]
+        assert variables["filter"] == {"team": {"id": {"eq": "123e4567-e89b-12d3-a456-426614174000"}}}
+
+
+class TestLinkIssues:
+    """Regression tests: linking must not clobber existing relations."""
+
+    ISSUE_A = "123e4567-e89b-12d3-a456-426614174000"
+    ISSUE_B = "123e4567-e89b-12d3-a456-426614174001"
+
+    def _relation_response(self):
+        return {
+            "issueRelationCreate": {
+                "success": True,
+                "issueRelation": {"id": "rel-1", "type": "blocks"},
+            }
+        }
+
+    @patch('handlers.handler.execute_query')
+    def test_blocks_creates_relation(self, mock_query):
+        """Should use issueRelationCreate, not an issueUpdate that overwrites."""
+        mock_query.return_value = self._relation_response()
+
+        result = link_issues(self.ISSUE_A, self.ISSUE_B, relationship_type="blocks")
+
+        assert mock_query.call_count == 1
+        variables = mock_query.call_args[0][1]
+        assert variables["input"] == {
+            "issueId": self.ISSUE_A,
+            "relatedIssueId": self.ISSUE_B,
+            "type": "blocks",
+        }
+        assert result["success"] is True
+
+    @patch('handlers.handler.execute_query')
+    def test_blocked_by_inverts_the_pair(self, mock_query):
+        """Should express blocked_by as an inverted 'blocks' relation."""
+        mock_query.return_value = self._relation_response()
+
+        result = link_issues(self.ISSUE_A, self.ISSUE_B, relationship_type="blocked_by")
+
+        assert mock_query.call_args[0][1]["input"] == {
+            "issueId": self.ISSUE_B,
+            "relatedIssueId": self.ISSUE_A,
+            "type": "blocks",
+        }
+        assert result["relationship"] == "blocked_by"
+
+    @patch('handlers.handler.execute_query')
+    def test_related_is_not_a_silent_noop(self, mock_query):
+        """Should send a real 'related' relation instead of an empty input."""
+        mock_query.return_value = {
+            "issueRelationCreate": {
+                "success": True,
+                "issueRelation": {"id": "rel-1", "type": "related"},
+            }
+        }
+
+        link_issues(self.ISSUE_A, self.ISSUE_B, relationship_type="related")
+
+        assert mock_query.call_args[0][1]["input"]["type"] == "related"
+
+    @patch('handlers.handler.execute_query')
+    def test_rejects_self_link(self, mock_query):
+        """Should reject linking an issue to itself."""
+        with pytest.raises(ValueError, match="itself"):
+            link_issues(self.ISSUE_A, self.ISSUE_A)
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_raises_when_api_reports_failure(self, mock_query):
+        """Should not report success when the mutation fails."""
+        mock_query.return_value = {"issueRelationCreate": {"success": False}}
+
+        with pytest.raises(ValueError, match="Failed to link issues"):
+            link_issues(self.ISSUE_A, self.ISSUE_B)

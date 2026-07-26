@@ -2,9 +2,7 @@
 
 import os
 import time
-import json
-from typing import Any, Dict, Optional, Callable
-from urllib.parse import urljoin
+from typing import Any, Dict, Optional
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -17,7 +15,6 @@ from .utils.errors import (
     NetworkError,
     handle_graphql_errors,
 )
-from .utils.validation import validate_url
 
 
 class LinearClient:
