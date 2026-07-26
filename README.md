@@ -9,7 +9,7 @@ Dev teams using Linear who want governed automation with full audit trails. Engi
 ## Install
 
 ```bash
-railcall market install agentstack/linear
+railcall market install agentstack-labs/linear
 ```
 
 ## Setup
@@ -75,10 +75,6 @@ Every command emits a signed receipt at `~/.railcall/receipts/` — hash-chained
 - All GraphQL queries use parameterized variables (no string interpolation)
 - Write operations gated by airlock — preview shows exactly what will change before approval
 - Signed receipts provide tamper-evident audit trail
-
-## Source
-
-https://github.com/agentstack/railcall-linear-module
 
 ## Support
 
