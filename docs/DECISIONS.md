@@ -27,7 +27,7 @@ The RailCall marketplace has 7,240 workflow templates but only 2 actual modules 
 
 ### Decision
 
-Build a **Linear module** (`agentstack/linear`).
+Build a **Linear module** (`agentstack-labs/linear`).
 
 ### Rationale
 
@@ -379,13 +379,13 @@ Write README with **≤500 words**.
 ### Structure
 
 ```markdown
-# agentstack/linear
+# agentstack-labs/linear
 
 Linear project management — create/update issues, list teams/projects/cycles, add comments.
 
 ## Install
 
-railcall market install agentstack/linear
+railcall market install agentstack-labs/linear
 
 ## Setup
 
@@ -395,13 +395,13 @@ railcall market install agentstack/linear
 ## Usage
 
 # List teams
-railcall run agentstack/linear.list_teams
+railcall run agentstack-labs/linear.list_teams
 
 # Create issue (approval required)
-railcall run agentstack/linear.create_issue --team_id=ENG --title="Fix bug" --priority=1
+railcall run agentstack-labs/linear.create_issue --team_id=abc123 --title="Fix bug" --priority=1
 
 # List issues
-railcall run agentstack/linear.list_issues --team_id=ENG
+railcall run agentstack-labs/linear.list_issues --team_id=abc123
 
 ## Commands
 
@@ -463,6 +463,498 @@ Enter **Track A only** (Best Module).
 
 ---
 
+## Decision 011: Expand to 30 commands for production-grade module
+
+**Date:** 2026-07-26  
+**Status:** Accepted  
+**Deciders:** AgentStack Labs
+
+### Context
+
+MVP (8 commands) is contest-ready but not production-grade. User wants to build a robust, enterprise-ready solution that can be monetized post-contest. Linear API supports 50+ operations; we need to decide which to implement.
+
+### Decision
+
+Expand to **30 commands** across 7 functional categories:
+
+| Category | Commands | Count |
+|----------|----------|-------|
+| Issue Management | create_issue, update_issue, delete_issue, list_issues, search_issues, bulk_update_issues, link_issues, add_attachment, add_reaction, get_issue_history | 10 |
+| Project Management | create_project, update_project, list_projects, create_milestone, update_milestone, list_milestones | 6 |
+| Team Management | create_team, update_team, list_teams, list_team_members, add_team_member, remove_team_member | 6 |
+| Workflow & Automation | create_label, update_label, list_labels, create_state, update_state, list_states | 6 |
+| Cycle Management | create_cycle, update_cycle, list_cycles, add_issues_to_cycle, remove_issues_from_cycle | 5 |
+| Webhooks | create_webhook, list_webhooks, delete_webhook | 3 |
+| Advanced | export_audit_log, create_view, list_views | 3 |
+
+### Rationale
+
+- **Comprehensive coverage**: 30 commands cover 90% of Linear API surface
+- **Enterprise-ready**: Bulk operations, webhooks, audit logs meet enterprise needs
+- **Monetization**: More commands = higher perceived value = can charge $199/mo (like Salesforce module)
+- **Competitive advantage**: Most complete Linear module in marketplace
+- **Future-proof**: Covers all major use cases; users won't outgrow it
+
+**Rejected:**
+- 15 commands: Not enough for enterprise; users would hit limitations quickly
+- 50+ commands: Overkill; many Linear API operations are niche (e.g., `delete_comment`, `archive_project`)
+
+### Consequences
+
+- **Positive**: Comprehensive, enterprise-ready, monetizable, competitive advantage
+- **Negative**: 2-3 weeks build time (vs 2 days for MVP) — acceptable for production-grade
+- **Risk**: Scope creep — mitigated by strict prioritization (P0/P1/P2)
+
+---
+
+## Decision 012: Add OAuth2 authentication for enterprise adoption
+
+**Date:** 2026-07-26  
+**Status:** Accepted  
+**Deciders:** AgentStack Labs
+
+### Context
+
+MVP uses API key auth only. Enterprise customers require OAuth2 for SSO integration, token rotation, and fine-grained permissions. Linear API supports OAuth2 for third-party apps (requires Linear approval).
+
+### Decision
+
+Implement **dual authentication**: API key (simple) + OAuth2 (enterprise).
+
+### Rationale
+
+- **Enterprise requirement**: OAuth2 is mandatory for SSO, token rotation, scoped permissions
+- **Security**: OAuth2 tokens expire, can be revoked, scoped to specific permissions
+- **Competitive advantage**: Salesforce module uses OAuth2; we need parity
+- **Future-proof**: API keys are legacy; OAuth2 is the future
+
+### Implementation
+
+```python
+# handlers/auth.py
+
+class OAuth2Auth:
+    """OAuth2 authentication for enterprise use cases."""
+    
+    AUTH_URL = "https://linear.app/oauth/authorize"
+    TOKEN_URL = "https://api.linear.app/oauth/token"
+    SCOPES = ["read", "write", "issues:create", "issues:update"]
+    
+    def __init__(self, client_id: str, client_secret: str):
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.token = self._load_token()
+    
+    def authorize(self) -> str:
+        """Initiate OAuth2 flow, return authorization URL."""
+        params = {
+            "client_id": self.client_id,
+            "redirect_uri": "http://localhost:8799/callback",
+            "response_type": "code",
+            "scope": " ".join(self.SCOPES),
+            "state": secrets.token_urlsafe(32)
+        }
+        return f"{self.AUTH_URL}?{urlencode(params)}"
+    
+    def exchange_code(self, code: str) -> dict:
+        """Exchange authorization code for access token."""
+        response = requests.post(self.TOKEN_URL, data={
+            "grant_type": "authorization_code",
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+            "code": code,
+            "redirect_uri": "http://localhost:8799/callback"
+        })
+        token_data = response.json()
+        self._save_token(token_data)
+        return token_data
+```
+
+### Consequences
+
+- **Positive**: Enterprise-ready, secure, competitive advantage
+- **Negative**: Requires Linear OAuth2 approval (2-4 weeks); more complex implementation
+- **Risk**: OAuth2 approval delayed — mitigated by shipping with API key auth first
+
+---
+
+## Decision 013: Add Redis caching layer for performance
+
+**Date:** 2026-07-26  
+**Status:** Accepted  
+**Deciders:** AgentStack Labs
+
+### Context
+
+MVP makes fresh API calls for every read operation. This is slow (2-5s per call) and hits rate limits. Enterprise customers expect <200ms response times for cached data.
+
+### Decision
+
+Implement **Redis-based caching** with in-memory fallback.
+
+### Rationale
+
+- **Performance**: Cached reads <200ms (vs 2-5s uncached)
+- **Rate limit reduction**: Fewer API calls = less likely to hit 50 req/10s limit
+- **Cost savings**: Lower token count if responses passed to LLMs
+- **User experience**: Faster commands = happier users
+
+### Implementation
+
+```python
+# handlers/cache.py
+
+class CacheManager:
+    """Redis-backed cache with in-memory fallback."""
+    
+    def __init__(self, backend: str = "auto"):
+        self.backend = backend
+        self.redis_client = None
+        self.memory_cache = {}
+        
+        if backend in ("redis", "auto"):
+            try:
+                self.redis_client = redis.Redis(
+                    host=os.environ.get("REDIS_HOST", "localhost"),
+                    port=int(os.environ.get("REDIS_PORT", 6379)),
+                    db=0,
+                    decode_responses=True
+                )
+                self.redis_client.ping()
+                self.backend = "redis"
+            except Exception:
+                if backend == "redis":
+                    raise
+                self.backend = "memory"
+    
+    def get(self, key: str) -> Optional[Any]:
+        """Get value from cache."""
+        cache_key = self._make_key(key)
+        
+        if self.backend == "redis":
+            value = self.redis_client.get(cache_key)
+            if value:
+                return json.loads(value)
+        else:
+            if cache_key in self.memory_cache:
+                return self.memory_cache[cache_key]
+        
+        return None
+    
+    def set(self, key: str, value: Any, ttl: int = 300):
+        """Set value in cache with TTL (seconds)."""
+        cache_key = self._make_key(key)
+        serialized = json.dumps(value)
+        
+        if self.backend == "redis":
+            self.redis_client.setex(cache_key, ttl, serialized)
+        else:
+            self.memory_cache[cache_key] = value
+```
+
+### Cache Strategy
+
+| Operation | Cache TTL | Invalidation |
+|-----------|-----------|--------------|
+| `list_teams` | 5 minutes | On team create/update/delete |
+| `list_projects` | 5 minutes | On project create/update/delete |
+| `list_issues` | 2 minutes | On issue create/update/delete |
+| `list_labels` | 10 minutes | On label create/update/delete |
+| `list_states` | 10 minutes | On state create/update/delete |
+| `list_cycles` | 5 minutes | On cycle create/update/delete |
+| `list_webhooks` | 5 minutes | On webhook create/delete |
+
+### Consequences
+
+- **Positive**: Faster reads, lower API usage, better UX
+- **Negative**: Adds Redis dependency (optional; in-memory fallback available)
+- **Risk**: Cache staleness — mitigated by aggressive invalidation on writes
+
+---
+
+## Decision 014: Add webhook support for event-driven automation
+
+**Date:** 2026-07-26  
+**Status:** Accepted  
+**Deciders:** AgentStack Labs
+
+### Context
+
+MVP is command-driven only. Enterprise customers want event-driven automation (e.g., "when issue created → notify Slack → create Jira ticket"). Linear API supports webhooks for issue, project, team events.
+
+### Decision
+
+Implement **webhook registration + signature verification**.
+
+### Rationale
+
+- **Event-driven automation**: Enables "when X happens → do Y" workflows
+- **Enterprise requirement**: Webhooks are mandatory for real-time integrations
+- **Competitive advantage**: No other Linear module supports webhooks
+- **RailCall integration**: Webhooks can trigger RailCall workflows
+
+### Implementation
+
+```python
+# handlers/webhooks.py
+
+def create_webhook(inputs: dict, context: dict) -> dict:
+    """Register a webhook for Linear events."""
+    webhook_url = inputs["url"]
+    events = inputs["events"]  # e.g., ["issue.created", "issue.updated"]
+    secret = inputs.get("secret") or secrets.token_urlsafe(32)
+    
+    mutation = """
+    mutation($input: WebhookCreateInput!) {
+      webhookCreate(input: $input) {
+        success
+        webhook {
+          id
+          url
+          enabled
+          createdAt
+        }
+      }
+    }
+    """
+    
+    webhook_input = {
+        "url": webhook_url,
+        "events": events,
+        "secret": secret
+    }
+    
+    data = client.execute(mutation, {"input": webhook_input})
+    
+    if not data["webhookCreate"]["success"]:
+        raise LinearError("Failed to create webhook")
+    
+    # Save secret for signature verification
+    _save_webhook_secret(data["webhookCreate"]["webhook"]["id"], secret)
+    
+    return {
+        "webhook": data["webhookCreate"]["webhook"],
+        "secret": secret  # Return to user for verification
+    }
+
+def verify_webhook_signature(payload: bytes, signature: str, webhook_id: str) -> bool:
+    """Verify webhook signature using HMAC-SHA256."""
+    secret = _load_webhook_secret(webhook_id)
+    if not secret:
+        return False
+    
+    expected_signature = hmac.new(
+        secret.encode(),
+        payload,
+        hashlib.sha256
+    ).hexdigest()
+    
+    return hmac.compare_digest(signature, expected_signature)
+```
+
+### Consequences
+
+- **Positive**: Event-driven automation, enterprise-ready, competitive advantage
+- **Negative**: Requires webhook endpoint (user must host); more complex implementation
+- **Risk**: Webhook delivery failures — mitigated by retry logic + dead letter queue
+
+---
+
+## Decision 015: Add comprehensive test coverage (>80%)
+
+**Date:** 2026-07-26  
+**Status:** Accepted  
+**Deciders:** AgentStack Labs
+
+### Context
+
+MVP has no tests. Production-grade software requires comprehensive test coverage to ensure reliability, catch regressions, and build user trust.
+
+### Decision
+
+Implement **unit tests + integration tests** with >80% code coverage.
+
+### Rationale
+
+- **Reliability**: Tests catch bugs before they reach users
+- **Regression prevention**: Tests ensure new features don't break existing ones
+- **User trust**: High test coverage signals quality
+- **CI/CD**: Tests required for automated deployment
+
+### Test Strategy
+
+| Test Type | Coverage | Execution | Purpose |
+|-----------|----------|-----------|---------|
+| **Unit Tests** | >80% code coverage | Every commit | Test individual functions in isolation |
+| **Integration Tests** | All 30 commands | Every commit | Test against Linear sandbox API |
+| **End-to-End Tests** | Critical workflows | Nightly | Test full airlock flow |
+| **Performance Tests** | Read/write latency | Weekly | Ensure SLA compliance |
+
+### Example
+
+```python
+# tests/unit/test_list_teams.py
+
+import pytest
+from unittest.mock import Mock, patch
+from handlers.handler import list_teams
+
+@pytest.fixture
+def mock_client():
+    with patch("handlers.handler.client") as mock:
+        yield mock
+
+def test_list_teams_success(mock_client):
+    """Test successful team listing."""
+    # Mock GraphQL response
+    mock_client.execute.return_value = {
+        "teams": {
+            "nodes": [
+                {"id": "team-1", "name": "Engineering", "key": "ENG"},
+                {"id": "team-2", "name": "Product", "key": "PROD"}
+            ]
+        }
+    }
+    
+    # Execute
+    result = list_teams({}, {})
+    
+    # Assert
+    assert len(result["teams"]) == 2
+    assert result["teams"][0]["name"] == "Engineering"
+    mock_client.execute.assert_called_once()
+```
+
+### Consequences
+
+- **Positive**: Reliable, regression-free, user trust, CI/CD-ready
+- **Negative**: 2-3 days to write tests (vs 0 for MVP) — acceptable for production-grade
+- **Risk**: Test maintenance burden — mitigated by keeping tests simple + focused
+
+---
+
+## Decision 016: Add CI/CD pipeline with GitHub Actions
+
+**Date:** 2026-07-26  
+**Status:** Accepted  
+**Deciders:** AgentStack Labs
+
+### Context
+
+MVP has no CI/CD. Production-grade software requires automated testing, linting, and deployment to ensure quality and reduce manual effort.
+
+### Decision
+
+Implement **GitHub Actions CI/CD pipeline** with:
+- Automated testing on every commit
+- Linting (black, flake8, mypy)
+- Automated publishing on release
+- Version bumping (semver)
+
+### Rationale
+
+- **Quality**: Automated tests catch bugs before merge
+- **Consistency**: Linting ensures code style consistency
+- **Efficiency**: Automated publishing reduces manual effort
+- **Versioning**: Semver ensures clear version history
+
+### Implementation
+
+```yaml
+# .github/workflows/ci.yml
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.9, 3.10, 3.11]
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+      
+      - name: Run unit tests
+        run: pytest tests/unit/ --cov=handlers --cov-report=xml
+      
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+      
+      - name: Run integration tests
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+        run: pytest tests/integration/
+  
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install linters
+        run: pip install black flake8 mypy
+      
+      - name: Run black
+        run: black --check handlers/ tests/
+      
+      - name: Run flake8
+        run: flake8 handlers/ tests/
+      
+      - name: Run mypy
+        run: mypy handlers/
+  
+  publish:
+    needs: [test, lint]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Publish to RailCall marketplace
+        run: |
+          # Install RailCall CLI
+          curl -sSL https://railcall.ai/install.sh | bash
+          
+          # Authenticate
+          railcall market login ${{ secrets.RAILCALL_EMAIL }} --password ${{ secrets.RAILCALL_PASSWORD }}
+          
+          # Publish module
+          railcall market publish . --type=module --id=agentstack-labs/linear
+```
+
+### Consequences
+
+- **Positive**: Automated quality checks, reduced manual effort, clear version history
+- **Negative**: 1 day to set up CI/CD (vs 0 for MVP) — acceptable for production-grade
+- **Risk**: CI/CD failures block deployment — mitigated by clear error messages + rollback strategy
+
+---
+
 ## Summary of Decisions
 
 | # | Decision | Rationale |
@@ -477,6 +969,12 @@ Enter **Track A only** (Best Module).
 | 008 | Cursor-based pagination | Handles large datasets; user-friendly |
 | 009 | README ≤500 words | Contest brief says "density beats length" |
 | 010 | Track A only | Larger prize pool; focused effort; long-term value |
+| 011 | Expand to 30 commands | Comprehensive, enterprise-ready, monetizable |
+| 012 | Add OAuth2 | Enterprise requirement, security, competitive advantage |
+| 013 | Add Redis caching | Performance, rate limit reduction, better UX |
+| 014 | Add webhook support | Event-driven automation, enterprise-ready |
+| 015 | Add test coverage | Reliability, regression prevention, user trust |
+| 016 | Add CI/CD pipeline | Automated quality checks, reduced manual effort |
 
 ---
 
@@ -484,10 +982,11 @@ Enter **Track A only** (Best Module).
 
 | Question | Status | Notes |
 |----------|--------|-------|
-| Should we add `list_users` command? | Deferred | Low priority; can add in v0.2.0 |
-| Should we support file attachments? | Deferred | Out of scope for MVP |
+| Should we add `list_users` command? | Deferred | Low priority; can add in v2.1 |
+| Should we support file attachments? | Accepted | Will add in v2.0 (30 commands) |
 | Should we build a workflow using this module? | Deferred | Can do post-contest |
 | Should we monetize immediately after contest? | Deferred | Depends on install count + feedback |
+| Should we add Slack/Jira/Notion modules? | Deferred | Focus on Linear first; expand later |
 
 ---
 
@@ -495,4 +994,5 @@ Enter **Track A only** (Best Module).
 
 | Date | Version | Changes |
 |------|---------|---------|
-| 2026-07-26 | 1.0.0 | Initial decision log |
+| 2026-07-26 | 1.0.0 | Initial decision log (MVP scope) |
+| 2026-07-26 | 2.0.0 | Expanded to production-grade scope (30 commands, OAuth2, caching, webhooks, tests, CI/CD) |
