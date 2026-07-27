@@ -1,7 +1,7 @@
 # Architecture Document: RailCall Linear Module (Production)
 
-**Version:** 0.2.3  
-**Status:** Planning — this document describes the target design, not all of which ships in 0.2.3  
+**Version:** 0.2.4  
+**Status:** Planning — this document describes the target design, not all of which ships in 0.2.4  
 **Author:** AgentStack Labs  
 **Date:** 2026-07-26  
 **Contest:** RailCall Community Contest 2026 Q3 — Track A (Best Module)
@@ -10,9 +10,9 @@
 
 ## 0. Implementation Status
 
-What this document describes versus what version 0.2.3 actually ships:
+What this document describes versus what version 0.2.4 actually ships:
 
-| Area | Designed here | Shipped in 0.2.3 |
+| Area | Designed here | Shipped in 0.2.4 |
 |------|---------------|------------------|
 | 36 commands | ✅ | ✅ |
 | Signed module bundle the Studio loader accepts | ✅ | ✅ — built by `tools/build_bundle.py`, Ed25519-signed, all 36 commands register |
@@ -96,66 +96,59 @@ Anything marked ❌ is a v2.1 target. No code in this repository depends on it.
 
 ### 2.1 Directory Layout
 
+Actual tree as shipped. (An earlier draft of this document listed `auth.py`,
+`webhooks.py` and a `queries/` package — none of those exist; see §0.)
+
 ```
 railcall-linear-module/
-├── module.json              # Manifest: 36 commands, auth, side_effects
+├── module.json              # Authoring manifest: 36 commands, auth, side_effects
 ├── handlers/
 │   ├── __init__.py
-│   ├── handler.py           # Main entry point
-│   ├── client.py            # Linear GraphQL client
-│   ├── auth.py              # OAuth2 + API key authentication
-│   ├── cache.py             # Redis/in-memory caching layer
-│   ├── webhooks.py          # Webhook handler registration
-│   ├── queries/             # GraphQL query definitions
-│   │   ├── issues.py
-│   │   ├── projects.py
-│   │   ├── teams.py
-│   │   ├── workflows.py
-│   │   ├── cycles.py
-│   │   └── webhooks.py
-│   └── utils/               # Shared utilities
-│       ├── errors.py        # Error handling
+│   ├── handler.py           # All 36 command implementations
+│   ├── client.py            # Linear GraphQL client (stdlib urllib, retry, no mutation replay)
+│   ├── credentials.py       # Vault-inside-Studio / environment-standalone resolution
+│   ├── cache.py             # Redis/in-memory metadata cache, tenant-scoped keys
+│   ├── queries.py           # GraphQL documents (19 mutations, 15 queries)
+│   └── utils/
+│       ├── errors.py        # Error taxonomy + GraphQL error mapping
 │       ├── validation.py    # Input validation
 │       └── pagination.py    # Cursor-based pagination
+├── tools/
+│   └── build_bundle.py      # Generates + Ed25519-signs the Studio bundle
+├── dist/, dist-min/         # Generated bundles (gitignored)
 ├── tests/
-│   ├── unit/                # Unit tests (mocked API)
-│   ├── integration/         # Integration tests (real API)
-│   ├── fixtures/            # Test data
-│   └── conftest.py          # Pytest configuration
-├── .github/
-│   └── workflows/
-│       └── ci.yml           # GitHub Actions CI/CD
+│   ├── unit/                # 214 tests, mocked API
+│   ├── integration/         # 49 tests against a real Linear workspace
+│   └── conftest.py
+├── .github/workflows/ci.yml # pytest matrix + flake8 + mypy + bundle check
 ├── docs/
-│   ├── PRD.md               # Product requirements
+│   ├── PRD.md
 │   ├── ARCHITECTURE.md      # This document
-│   ├── DECISIONS.md         # Decision log
-│   ├── API_REFERENCE.md     # Command reference
-│   ├── INSTALLATION.md      # Setup guide
-│   └── TROUBLESHOOTING.md   # Common issues
-├── .env.example             # Environment variables template
-├── pyproject.toml           # Python dependencies
-├── README.md                # Contest submission doc
-└── LICENSE                  # MIT license
+│   └── DECISIONS.md         # Decision log
+├── .env.example             # Standalone/test credentials only
+├── pyproject.toml           # No runtime dependencies
+├── CONTEST_README.md        # ≤500-word submission README
+├── README.md
+└── LICENSE
 ```
 
 ### 2.2 File Responsibilities
 
-| File | Purpose | Size |
-|------|---------|------|
-| `module.json` | Declares 36 commands, auth pattern, side_effects | ~300 lines |
-| `handlers/handler.py` | Main entry point, routes to command implementations | ~100 lines |
-| `handlers/client.py` | Linear GraphQL client with retry + rate limiting | ~200 lines |
-| `handlers/auth.py` | OAuth2 flow + API key authentication | ~250 lines |
-| `handlers/cache.py` | Redis/in-memory caching with TTL | ~150 lines |
-| `handlers/webhooks.py` | Webhook registration + signature verification | ~180 lines |
-| `handlers/queries/*.py` | GraphQL query/mutation definitions | ~50 lines each |
-| `handlers/utils/*.py` | Error handling, validation, pagination | ~100 lines each |
-| `tests/unit/*.py` | Unit tests for all commands | ~50 lines each |
-| `tests/integration/*.py` | Integration tests against Linear sandbox | ~100 lines each |
-| `.github/workflows/ci.yml` | CI/CD pipeline (test, lint, publish) | ~80 lines |
-| `docs/API_REFERENCE.md` | Full command reference with examples | ~500 lines |
-| `docs/INSTALLATION.md` | OAuth2 + API key setup guide | ~200 lines |
-| `README.md` | Contest submission doc, hosted on GitHub | ≤500 words |
+| File | Purpose | Lines |
+|------|---------|-------|
+| `module.json` | Authoring manifest: 36 commands, auth, side_effects | 929 |
+| `handlers/handler.py` | All 36 command implementations | 1564 |
+| `handlers/client.py` | GraphQL client: stdlib urllib, capped retry, mutations never replayed | 295 |
+| `handlers/credentials.py` | Vault inside the Studio, environment standalone | 123 |
+| `handlers/cache.py` | Metadata cache, tenant-scoped keys, Redis optional | 283 |
+| `handlers/queries.py` | GraphQL documents (19 mutations, 15 queries) | 679 |
+| `handlers/utils/*.py` | Error taxonomy, input validation, pagination | — |
+| `tools/build_bundle.py` | Generates + Ed25519-signs the Studio bundle | 494 |
+| `tests/unit/*.py` | 214 tests, mocked API | — |
+| `tests/integration/*.py` | 49 tests against a real Linear workspace | — |
+| `.github/workflows/ci.yml` | pytest matrix + flake8 + mypy + bundle size check | 56 |
+| `CONTEST_README.md` | ≤500-word submission README | 79 |
+| `README.md` | Full reference documentation | 695 |
 
 ---
 
@@ -1094,7 +1087,7 @@ railcall market install agentstack-labs/linear
 // module.json
 {
   "slug": "agentstack-labs/linear",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "changelog": "https://github.com/faizalmy/railcall-linear-module/blob/main/CHANGELOG.md"
 }
 ```

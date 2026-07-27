@@ -24,9 +24,11 @@
 - [Quick Start](#quick-start)
 - [Commands Reference](#commands-reference)
 - [Advanced Usage](#advanced-usage)
+- [Known Limitations](#known-limitations)
 - [Architecture](#architecture)
 - [Development](#development)
 - [Troubleshooting](#troubleshooting)
+- [Publishing to the Marketplace](#publishing-to-the-marketplace)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -461,7 +463,7 @@ railcall-linear-module/
 │       ├── errors.py        # Error handling utilities
 │       ├── validation.py    # Input validation
 │       └── pagination.py    # Pagination utilities
-├── tests/                   # 171 unit + 46 live (package + generated bundle)
+├── tests/                   # 214 unit + 49 live (package + generated bundle)
 ├── docs/                    # Documentation
 └── .github/workflows/       # CI/CD pipeline
 ```
@@ -675,9 +677,9 @@ This module is submitted to the **RailCall Community Contest 2026 Q3**.
 
 | Metric | Status |
 |--------|--------|
-| Version | 0.2.3 |
+| Version | 0.2.4 |
 | Commands | 30 |
-| Test Coverage | 171 unit (75% lines) + 46 live against a real Linear workspace |
+| Test Coverage | 214 unit (77% lines) + 49 live against a real Linear workspace |
 | Python Support | 3.9+ |
 | License | MIT |
 | Production Ready | ✅ Yes |

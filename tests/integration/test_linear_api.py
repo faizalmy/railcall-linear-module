@@ -5,11 +5,8 @@ import pytest
 from datetime import datetime, timedelta
 
 # These tests have state dependencies (test_03 depends on test_02's created resource)
-# so random ordering would break them. Disable pytest-randomly for this module.
-pytest_plugins = ["pytest_randomly"]
-pytestmark = [
-    pytest.mark.randomly_disable,
-]
+# so random ordering would break them. Deterministic order is enforced
+# project-wide by `-p no:randomly` in pyproject.toml's addopts.
 from handlers.handler import (
     # Issues
     list_issues, get_issue, create_issue, update_issue, delete_issue,

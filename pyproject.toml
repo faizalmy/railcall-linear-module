@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "railcall-linear-module"
-version = "0.2.3"
+version = "0.2.4"
 description = "Production-grade Linear integration for RailCall"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -12,13 +12,19 @@ license = {text = "MIT"}
 authors = [
     {name = "AgentStack Labs", email = "jai.crys@gmail.com"}
 ]
-dependencies = [
-    "redis>=5.0.0",
-    "cryptography>=41.0.0",
-]
+# No runtime dependencies. The module talks to Linear over stdlib urllib, which
+# is what lets the published bundle run inside the Studio with nothing installed.
+# `redis` is imported lazily by the cache and falls back to memory without it;
+# `cryptography` is only needed to SIGN a bundle, so it lives in `dev`.
+dependencies = []
 
 [project.optional-dependencies]
+cache = [
+    "redis>=5.0.0",
+]
 dev = [
+    "cryptography>=41.0.0",
+    "redis>=5.0.0",
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
     "pytest-mock>=3.11.0",
@@ -40,4 +46,7 @@ disallow_untyped_defs = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-v --cov=handlers --cov-report=term-missing"
+# -p no:randomly: the integration suite is intentionally sequential (test_01
+# creates what test_02 reads), so shuffling would break it. Setting it here
+# means a plain `pytest` works for anyone, not just those who know the flag.
+addopts = "-v -p no:randomly --cov=handlers --cov-report=term-missing"
