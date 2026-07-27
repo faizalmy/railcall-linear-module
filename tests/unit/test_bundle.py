@@ -613,3 +613,56 @@ class TestNoCredentialEnvironmentRead:
         """A silent miss here would ship a credential env read."""
         with pytest.raises(SystemExit, match="_standalone_api_key"):
             build_bundle.neutralize_standalone("def unrelated():\n    return 1\n")
+
+
+class TestNoDeprecatedLinearFields:
+    """Guard against reintroducing fields Linear has deprecated.
+
+    Checked against the live schema on 2026-07-27: every root operation we call
+    is current, and the only deprecated field we had been selecting was
+    `Project.state` ("Use project.status instead"). `Issue.state` is a different
+    field - a nested WorkflowState - and is NOT deprecated.
+    """
+
+    # Deprecated field -> the type it belongs to, so the check stays readable
+    # when the list grows. Bare `state` is the Project form; the Issue form is
+    # always followed by a selection set.
+    def test_no_bare_state_selection(self):
+        """A bare `state` is Project.state, which Linear deprecated."""
+        import handlers.queries as queries
+
+        offenders = [
+            name for name in dir(queries)
+            if name.isupper()
+            and re.search(r"\n\s*state\s*\n", getattr(queries, name))
+        ]
+        assert offenders == [], (
+            f"{offenders} select the deprecated Project.state; use "
+            "status {{ id name type }} instead"
+        )
+
+    def test_issue_state_is_still_selected_as_an_object(self):
+        """The non-deprecated Issue.state must survive the above rule."""
+        import handlers.queries as queries
+
+        assert re.search(r"state\s*\{", queries.LIST_ISSUES)
+        assert re.search(r"state\s*\{", queries.GET_ISSUE)
+
+    def test_no_deprecated_search_entry_point(self):
+        """issueSearch is deprecated; searchIssues is the live one."""
+        import handlers.queries as queries
+
+        assert "searchIssues(" in queries.SEARCH_ISSUES
+        joined = " ".join(
+            getattr(queries, n) for n in dir(queries) if n.isupper()
+        )
+        assert "issueSearch(" not in joined
+
+    def test_no_roadmap_operations(self):
+        """Roadmap is superseded by Initiative, per Linear's own schema docs."""
+        joined = " ".join(
+            getattr(__import__("handlers.queries", fromlist=["x"]), n)
+            for n in dir(__import__("handlers.queries", fromlist=["x"]))
+            if n.isupper()
+        )
+        assert "roadmap" not in joined.lower()

@@ -71,7 +71,7 @@ run immediately; 27 writes are gated by the Airlock.
 
 ## Verification
 
-236 unit tests and 56 live tests against a real Linear workspace; all 45
+240 unit tests and 56 live tests against a real Linear workspace; all 45
 commands exercised end-to-end. Full source, architecture notes and the bundle
 build tool: <https://github.com/faizalmy/railcall-linear-module>
 

@@ -6,7 +6,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-236%20unit%20%2B%2056%20live-brightgreen.svg)](./tests/)
+[![Tests](https://img.shields.io/badge/tests-240%20unit%20%2B%2056%20live-brightgreen.svg)](./tests/)
 [![Coverage](https://img.shields.io/badge/coverage-77%25-yellowgreen.svg)](./tests/)
 
 *Comprehensive Linear integration with automatic retry, rate limiting, caching, and enterprise-grade error handling*
@@ -481,7 +481,7 @@ railcall-linear-module/
 │       ├── errors.py        # Error handling utilities
 │       ├── validation.py    # Input validation
 │       └── pagination.py    # Pagination utilities
-├── tests/                   # 236 unit + 56 live (package + generated bundle)
+├── tests/                   # 240 unit + 56 live (package + generated bundle)
 ├── docs/                    # Documentation
 └── .github/workflows/       # CI/CD pipeline
 ```
@@ -695,9 +695,9 @@ This module is submitted to the **RailCall Community Contest 2026 Q3**.
 
 | Metric | Status |
 |--------|--------|
-| Version | 0.2.6 |
+| Version | 0.2.7 |
 | Commands | 30 |
-| Test Coverage | 236 unit (77% lines) + 56 live against a real Linear workspace |
+| Test Coverage | 240 unit (77% lines) + 56 live against a real Linear workspace |
 | Python Support | 3.9+ |
 | License | MIT |
 | Production Ready | ✅ Yes |

@@ -287,7 +287,11 @@ query($first: Int, $after: String) {
       id
       name
       description
-      state
+      status {
+        id
+        name
+        type
+      }
       priority
       startDate
       targetDate
@@ -308,7 +312,11 @@ query($id: String!) {
     id
     name
     description
-    state
+    status {
+      id
+      name
+      type
+    }
     priority
     startDate
     targetDate
@@ -337,7 +345,11 @@ mutation($input: ProjectCreateInput!) {
       id
       name
       description
-      state
+      status {
+        id
+        name
+        type
+      }
       startDate
       targetDate
       teams {
@@ -791,7 +803,10 @@ query($id: String!) {
       nodes {
         id
         name
-        state
+        status {
+          name
+          type
+        }
       }
     }
     createdAt
