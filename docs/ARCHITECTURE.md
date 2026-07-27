@@ -1,7 +1,7 @@
 # Architecture Document: RailCall Linear Module (Production)
 
-**Version:** 1.0.0  
-**Status:** Planning — this document describes the target design, not all of which ships in 1.0.0  
+**Version:** 0.2.0  
+**Status:** Planning — this document describes the target design, not all of which ships in 0.2.0  
 **Author:** AgentStack Labs  
 **Date:** 2026-07-26  
 **Contest:** RailCall Community Contest 2026 Q3 — Track A (Best Module)
@@ -10,14 +10,15 @@
 
 ## 0. Implementation Status
 
-What this document describes versus what version 1.0.0 actually ships:
+What this document describes versus what version 0.2.0 actually ships:
 
-| Area | Designed here | Shipped in 1.0.0 |
+| Area | Designed here | Shipped in 0.2.0 |
 |------|---------------|------------------|
 | 36 commands | ✅ | ✅ |
 | Signed module bundle the Studio loader accepts | ✅ | ✅ — built by `tools/build_bundle.py`, Ed25519-signed, all 36 commands register |
-| Credential from the station vault (`linear` provider) | ✅ | ✅ — falls back to `LINEAR_API_KEY` standalone |
-| API key auth (`LINEAR_API_KEY`, env only, never persisted) | ✅ | ✅ |
+| Credential from the station vault (`linear` provider) | ✅ | ✅ — vault is the **only** source inside the Studio; `LINEAR_API_KEY` applies to standalone use |
+| Mutations never auto-retried (Linear has no idempotency key) | ✅ | ✅ |
+| Stdlib-only transport (no third-party dependencies) | ✅ | ✅ |
 | OAuth2 flow, `handlers/auth.py`, encrypted token file | ✅ | ❌ Not implemented — sections 3.3 and 3.4 are forward-looking |
 | Retry with capped backoff + `Retry-After` | ✅ | ✅ |
 | Metadata caching (Redis / in-memory) | ✅ | ✅ — applied to team, project, user, state and label reads only |
@@ -1093,7 +1094,7 @@ railcall market install agentstack-labs/linear
 // module.json
 {
   "slug": "agentstack-labs/linear",
-  "version": "1.0.0",
+  "version": "0.2.0",
   "changelog": "https://github.com/faizalmy/railcall-linear-module/blob/main/CHANGELOG.md"
 }
 ```

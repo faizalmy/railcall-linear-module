@@ -37,6 +37,11 @@ def bundle():
 
     Deliberately does NOT import handlers/ - if the flattening dropped
     something, this namespace is where it surfaces.
+
+    __rc_helpers__ carries a working `vault_get`, exactly as the loader supplies.
+    That also means this fixture exercises the vault credential path rather than
+    the environment one: inside the Studio the module refuses to read
+    LINEAR_API_KEY, so a bundle that ignored the vault would fail here.
     """
     with open(build_bundle.SOURCE_MANIFEST, "r", encoding="utf-8") as handle:
         source = json.load(handle)
@@ -44,10 +49,16 @@ def bundle():
     manifest = build_bundle.build_manifest(source)
     text = build_bundle.flatten_sources() + build_bundle.build_adapters(manifest)
 
+    def vault_get(provider):
+        """Stand-in for the station vault, keyed the same way the Studio is."""
+        if provider != "linear":
+            return None
+        return {"api_key": os.environ["LINEAR_API_KEY"]}
+
     namespace = {
         "__name__": "railcall_module_agentstack_labs_linear",
         "__file__": "handlers/handler.py",
-        "__rc_helpers__": {},
+        "__rc_helpers__": {"vault_get": vault_get},
         "os": os,
         "json": json,
         "time": time,

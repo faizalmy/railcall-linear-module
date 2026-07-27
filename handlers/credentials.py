@@ -28,6 +28,15 @@ def _rc_helpers() -> Optional[Dict[str, Any]]:
     return helpers if isinstance(helpers, dict) else None
 
 
+def in_studio() -> bool:
+    """Whether the RailCall Studio is hosting us.
+
+    Presence of the loader-injected helper dict is the signal. It decides where
+    credentials come from, so callers use this rather than re-deriving it.
+    """
+    return _rc_helpers() is not None
+
+
 def vault_entry(provider: str = "linear") -> Optional[Dict[str, Any]]:
     """Read a provider credential from the station vault.
 
@@ -52,26 +61,31 @@ def vault_entry(provider: str = "linear") -> Optional[Dict[str, Any]]:
 
 
 def resolve_api_key() -> Optional[str]:
-    """The Linear API key, vault first then environment.
+    """The Linear API key: the station vault inside the Studio, else the environment.
 
-    The vault wins because inside the Studio it is the operator's configured
-    credential, whereas a stray LINEAR_API_KEY in the station's environment
-    would be an accident rather than a choice.
+    Inside the Studio the vault is the ONLY source. Process environment is not an
+    acceptable fallback there - it is readable via `ps auxe` and lands in core
+    dumps, so silently reading it would defeat the vault the operator configured.
+    A missing vault entry is an error to surface, not something to paper over.
+
+    Outside the Studio (library use, the test suite) there is no vault to read
+    from, so LINEAR_API_KEY is the supported source.
     """
-    entry = vault_entry("linear")
-    if entry:
-        key = str(entry.get("api_key") or "").strip()
-        if key:
-            return key
+    if in_studio():
+        entry = vault_entry("linear")
+        if not entry:
+            return None
+        return str(entry.get("api_key") or "").strip() or None
 
     return os.environ.get("LINEAR_API_KEY")
 
 
 def resolve_default_team_id() -> Optional[str]:
-    """Optional team_id saved alongside the key, used as a fallback."""
-    entry = vault_entry("linear")
-    if entry:
-        team_id = str(entry.get("team_id") or "").strip()
-        if team_id:
-            return team_id
+    """Optional team_id saved alongside the key. Same vault-or-environment rule."""
+    if in_studio():
+        entry = vault_entry("linear")
+        if not entry:
+            return None
+        return str(entry.get("team_id") or "").strip() or None
+
     return os.environ.get("LINEAR_TEAM_ID")

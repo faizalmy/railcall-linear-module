@@ -282,6 +282,7 @@ def build_manifest(source):
         "description": source["description"],
         "author": source["author"],
         "license": source["license"],
+        "repository": source.get("repository"),
         "provider": PROVIDER,
         "publisher_pubkey": source["publisher_pubkey"],
         "license_required": False,

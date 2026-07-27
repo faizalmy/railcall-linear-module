@@ -1,12 +1,11 @@
 """Linear GraphQL client with retry logic and rate limiting.
 
-Two transports. `requests` is used when it is importable — that is the normal
-standalone/test path. Inside the RailCall Studio the handler is exec'd as a
-single file and third-party packages are not guaranteed, so a stdlib urllib
-transport takes over. Both return the same normalized response, because the
-retry loop needs the status code and the Retry-After header; the Studio's own
-http_post_json helper collapses errors into a bare RuntimeError and would
-throw both away.
+Transport is stdlib urllib only. The module is exec'd as a single file inside
+the RailCall Studio where third-party packages are not guaranteed, and a
+module making a handful of HTTP calls does not justify the supply-chain
+surface of a dependency. The Studio's own http_post_json helper is unusable
+here because it collapses errors into a bare RuntimeError, discarding the
+status code and Retry-After header that the retry loop needs.
 """
 
 import json as _json
@@ -16,14 +15,7 @@ import urllib.error
 import urllib.request
 from typing import Any, Dict, Optional
 
-try:
-    import requests
-    from requests.adapters import HTTPAdapter
-    _HAS_REQUESTS = True
-except ImportError:  # pragma: no cover - exercised only inside the Studio
-    _HAS_REQUESTS = False
-
-from .credentials import resolve_api_key
+from .credentials import in_studio, resolve_api_key
 from .utils.errors import (
     LinearError,
     AuthenticationError,
@@ -67,28 +59,18 @@ class LinearClient:
         """
         self.api_key = api_key or resolve_api_key()
         if not self.api_key:
+            # Point at the source that actually applies here; naming the other
+            # one would send the operator to a place this context ignores.
+            if in_studio():
+                raise AuthenticationError(
+                    "No Linear credential in the station vault. Save your API key "
+                    "under the 'linear' provider (Studio → Sends → Configure). "
+                    "Get the key from Linear → Settings → API → Create key."
+                )
             raise AuthenticationError(
-                "No Linear API key. Set LINEAR_API_KEY, or save one in the "
-                "station vault under the 'linear' provider. "
+                "No Linear API key. Set LINEAR_API_KEY in the environment. "
                 "Get your key from Linear → Settings → API → Create key."
             )
-
-        self.session = self._create_session() if _HAS_REQUESTS else None
-
-    def _create_session(self) -> Any:
-        """Create requests session for connection pooling.
-
-        Retries are handled entirely in execute() so that Retry-After is honored
-        and every attempt is counted once. Stacking urllib3's Retry on top of the
-        loop would multiply the two limits together (4 x 4 = 16 requests per call).
-        """
-        session = requests.Session()
-
-        adapter = HTTPAdapter(max_retries=0, pool_connections=4, pool_maxsize=8)
-        session.mount("https://", adapter)
-        session.mount("http://", adapter)
-
-        return session
 
     def _backoff_seconds(self, attempt: int, retry_after: Optional[float] = None) -> float:
         """Seconds to wait before the next attempt.
@@ -121,25 +103,19 @@ class LinearClient:
             "Content-Type": "application/json",
         }
     
+    @staticmethod
+    def is_mutation(query: str) -> bool:
+        """Whether this document mutates state.
+
+        Linear's GraphQL API offers no idempotency key, so a retry after a
+        mutation the server already accepted creates a duplicate issue or
+        comment. Detecting it here rather than at the call sites means a new
+        command cannot forget to opt out of retries.
+        """
+        return query.lstrip().startswith("mutation")
+
     def _post(self, payload: Dict[str, Any], timeout: int) -> "_Response":
         """One HTTP round trip. Raises NetworkError on any transport failure."""
-        session = self.session
-        if _HAS_REQUESTS and session is not None:
-            try:
-                raw = session.post(
-                    self.LINEAR_API_URL,
-                    headers=self._get_headers(),
-                    json=payload,
-                    timeout=timeout,
-                )
-            except requests.exceptions.Timeout as e:
-                raise NetworkError(f"Request timeout after {timeout}s: {str(e)}")
-            except requests.exceptions.ConnectionError as e:
-                raise NetworkError(f"Connection error: {str(e)}")
-            except requests.exceptions.RequestException as e:
-                raise NetworkError(f"Request failed: {str(e)}")
-            return _Response(raw.status_code, dict(raw.headers), raw.content)
-
         request = urllib.request.Request(
             self.LINEAR_API_URL,
             data=_json.dumps(payload).encode("utf-8"),
@@ -178,17 +154,24 @@ class LinearClient:
             
         Returns:
             GraphQL response data
-            
+
         Raises:
             LinearError: If query fails after retries
         """
         payload: Dict[str, Any] = {"query": query}
         if variables:
             payload["variables"] = variables
-        
+
+        # Mutations get exactly one attempt. Linear has no idempotency key, so a
+        # 429 or timeout arriving AFTER the server accepted the write would be
+        # retried into a duplicate issue/comment. Recovery is a fresh airlock
+        # approval, which is a human decision rather than a silent replay.
+        attempts = 1 if self.is_mutation(query) else self.MAX_RETRIES + 1
+        last_attempt = attempts - 1
+
         last_error: Optional[Exception] = None
 
-        for attempt in range(self.MAX_RETRIES + 1):
+        for attempt in range(attempts):
             retry_after: Optional[float] = None
 
             try:
@@ -235,10 +218,14 @@ class LinearClient:
                 # not-found and permission errors are deterministic.
                 if not isinstance(e, (RateLimitError, NetworkError)):
                     raise
+                # A mutation never retries, so surface the error with its
+                # Retry-After intact for the caller to act on.
+                if attempts == 1:
+                    raise
                 last_error = e
 
             # Wait before retry (capped exponential backoff with jitter)
-            if attempt < self.MAX_RETRIES:
+            if attempt < last_attempt:
                 time.sleep(self._backoff_seconds(attempt, retry_after))
 
         # All retries exhausted

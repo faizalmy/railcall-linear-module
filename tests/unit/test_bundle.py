@@ -16,6 +16,7 @@ import os
 import sys
 
 import pytest
+from unittest.mock import patch
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
@@ -404,3 +405,129 @@ class TestRegistryTypeVocabulary:
         assert validate(by_id["linear.create_issue"], {"title": "x"}) == (
             "missing required field: team_id"
         )
+
+
+class TestNoThirdPartyDependency:
+    """The bundle must run on a stock Python with no site-packages.
+
+    The Studio execs handler.py in an isolated namespace; a third-party import
+    would be an unmanaged runtime dependency and, per the marketplace review,
+    supply-chain surface a module making a few HTTP calls cannot justify.
+    """
+
+    STDLIB_ONLY = {
+        "os", "json", "time", "re", "random", "hashlib", "logging", "inspect",
+        "functools", "typing", "datetime", "urllib", "urllib.error",
+        "urllib.request",
+    }
+
+    def _imported_modules(self, handler_text):
+        tree = ast.parse(handler_text)
+        modules = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                modules.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                modules.add(node.module)
+        return modules
+
+    def test_requests_is_not_imported(self, handler_text):
+        assert "requests" not in self._imported_modules(handler_text)
+        assert "import requests" not in handler_text
+
+    def test_only_stdlib_is_imported(self, handler_text):
+        outside = {
+            m for m in self._imported_modules(handler_text)
+            if m.split(".")[0] not in {n.split(".")[0] for n in self.STDLIB_ONLY}
+        }
+        # redis is imported lazily inside RedisCache and is optional.
+        outside.discard("redis")
+        assert outside == set(), f"non-stdlib imports in the bundle: {outside}"
+
+    def test_the_bundle_execs_without_third_party_packages(self, handler_text):
+        """Simulate a bare interpreter: make `requests` unimportable."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def blocked(name, *args, **kwargs):
+            if name.split(".")[0] == "requests":
+                raise ImportError("requests is not installed")
+            return real_import(name, *args, **kwargs)
+
+        namespace = {
+            "__name__": "railcall_module_test",
+            "__file__": "handler.py",
+            "__rc_helpers__": {},
+            "os": os,
+            "json": json,
+            "time": __import__("time"),
+        }
+        with patch("builtins.__import__", side_effect=blocked):
+            exec(compile(handler_text, "handler.py", "exec"), namespace)
+
+        assert callable(namespace.get("linear_list_teams"))
+
+
+class TestAuthBlock:
+    """The manifest must point at the vault, not an environment variable."""
+
+    def test_declares_a_vault_provider(self, manifest):
+        auth = manifest["auth"]
+        assert auth["type"] == "api_key"
+        assert auth["vault_provider"] == "linear"
+        assert auth["secret_field"] == "LINEAR_API_KEY"
+
+    def test_does_not_declare_env_var(self, manifest):
+        """`env_var` invites the process-environment read the review flagged."""
+        assert "env_var" not in manifest["auth"]
+
+    def test_declares_a_repository(self, manifest):
+        assert manifest["repository"].startswith("https://github.com/")
+
+
+class TestMutationSafetyReachesTheBundle:
+    """The retry rule must survive flattening, not just exist in the package."""
+
+    def test_is_mutation_is_present_and_correct(self, handler_text):
+        namespace = {
+            "__name__": "railcall_module_test",
+            "__file__": "handler.py",
+            "__rc_helpers__": {},
+            "os": os,
+            "json": json,
+            "time": __import__("time"),
+        }
+        exec(compile(handler_text, "handler.py", "exec"), namespace)
+
+        client_cls = namespace["LinearClient"]
+        assert client_cls.is_mutation("mutation($x: Int) { a }") is True
+        assert client_cls.is_mutation("query { a }") is False
+
+    def test_every_mutation_constant_is_detected(self, handler_text):
+        """A command whose constant is misclassified would retry into a duplicate."""
+        namespace = {
+            "__name__": "railcall_module_test",
+            "__file__": "handler.py",
+            "__rc_helpers__": {},
+            "os": os,
+            "json": json,
+            "time": __import__("time"),
+        }
+        exec(compile(handler_text, "handler.py", "exec"), namespace)
+
+        client_cls = namespace["LinearClient"]
+        constants = {
+            name: value for name, value in namespace.items()
+            if name.isupper() and isinstance(value, str) and "{" in value
+        }
+        assert constants, "no GraphQL constants found in the bundle"
+
+        for name, document in constants.items():
+            stripped = document.lstrip()
+            if stripped.startswith("mutation"):
+                assert client_cls.is_mutation(document) is True, name
+            elif stripped.startswith("query"):
+                assert client_cls.is_mutation(document) is False, name
+            else:
+                pytest.fail(f"{name} is neither a query nor a mutation")

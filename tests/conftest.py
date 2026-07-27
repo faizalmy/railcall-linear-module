@@ -26,7 +26,7 @@ def mock_env():
     with patch.dict(os.environ, {
         'LINEAR_API_KEY': 'test_api_key',
         'RAILCALL_MODULE_NAME': 'linear',
-        'RAILCALL_MODULE_VERSION': '1.0.0',
+        'RAILCALL_MODULE_VERSION': '0.2.0',
     }):
         yield
 

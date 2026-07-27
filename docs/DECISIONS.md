@@ -999,3 +999,4 @@ jobs:
 | 2026-07-26 | 1.0.0 | Initial decision log (MVP scope) |
 | 2026-07-26 | 2.0.0 | Expanded to production-grade scope (30 commands, OAuth2, caching, webhooks, tests, CI/CD) |
 | 2026-07-26 | 1.0.0 | Renumbered for the first marketplace release: 36 commands, signed RailCall bundle, no OAuth2 (see ARCHITECTURE §0) |
+| 2026-07-26 | 0.2.0 | Marketplace review response: dropped the `requests` dependency, vault-only credentials inside the Studio, mutations no longer auto-retried, expanded listing description. Renumbered down at the reviewer's request. |

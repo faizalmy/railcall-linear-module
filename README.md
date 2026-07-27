@@ -6,8 +6,8 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-171%20unit%20%2B%2046%20live-brightgreen.svg)](./tests/)
-[![Coverage](https://img.shields.io/badge/coverage-75%25-yellowgreen.svg)](./tests/)
+[![Tests](https://img.shields.io/badge/tests-199%20unit%20%2B%2047%20live-brightgreen.svg)](./tests/)
+[![Coverage](https://img.shields.io/badge/coverage-77%25-yellowgreen.svg)](./tests/)
 
 *Comprehensive Linear integration with automatic retry, rate limiting, caching, and enterprise-grade error handling*
 
@@ -91,7 +91,7 @@ comprehensive error handling. 16 reads execute immediately; 20 writes are
 - **Resilience**: Single-layer retry with capped backoff and `Retry-After` support
 - **Performance**: Redis/in-memory metadata caching with 5-minute TTL
 - **Observability**: Comprehensive logging and error reporting
-- **Security**: API key read from the environment only, never persisted or logged
+- **Security**: API key read from the station vault inside the Studio, never from process environment; never persisted or logged
 - **Reliability**: Input validation and error handling
 
 ---
@@ -135,8 +135,13 @@ python3 tools/build_bundle.py --install
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `LINEAR_API_KEY` | ✅ Yes | Your Linear API key |
+| `LINEAR_API_KEY` | Standalone only | Read **only** outside the Studio (library use, tests). Inside the Studio the station vault is the sole source. |
 | `REDIS_URL` | ❌ No | Redis connection URL (defaults to in-memory cache) |
+
+> **Inside the Studio the module never reads the process environment.** Env vars
+> are visible via `ps auxe` and land in core dumps, so a vault bypass would
+> defeat the credential the operator configured. A missing vault entry is
+> surfaced as an error rather than silently papered over.
 
 ### Getting Your Linear API Key
 
@@ -188,8 +193,9 @@ railcall mcp config claude
 
 Commands stay `not_configured` until the `linear` provider has a saved key.
 Add it in **Studio → Sends → Configure** (`api_key`, optionally `team_id`).
-Outside the Studio the module falls back to `LINEAR_API_KEY` in the environment,
-which is what the test suite uses.
+That vault entry is the only credential source inside the Studio. Outside it —
+library use and the test suite — `LINEAR_API_KEY` is used instead, because there
+is no vault to read.
 
 ### Read commands
 
@@ -636,7 +642,7 @@ This module is submitted to the **RailCall Community Contest 2026 Q3**.
 
 | Metric | Status |
 |--------|--------|
-| Version | 1.0.0 |
+| Version | 0.2.0 |
 | Commands | 30 |
 | Test Coverage | 171 unit (75% lines) + 46 live against a real Linear workspace |
 | Python Support | 3.9+ |

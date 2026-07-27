@@ -40,11 +40,12 @@ closed those twelve tickets?"
 
 1. Generate a key at **Linear → Settings → API**.
 2. In **Studio → Sends → Configure**, save it under the `linear` provider as
-   `api_key`. Standalone use falls back to `LINEAR_API_KEY` in the environment.
+   `api_key`. That vault entry is the only credential source inside the Studio;
+   `LINEAR_API_KEY` applies to standalone/library use only.
 3. Run `linear.list_teams` — every other command needs a team UUID.
 
-The key is read at call time from the vault or the environment. It is never
-written to disk, logged, or placed in a cache key.
+The key is read at call time from the vault, never from process environment
+inside the Studio. It is never written to disk, logged, or placed in a cache key.
 
 ## Scope
 
@@ -64,10 +65,12 @@ writes are `write_requires_approval` and gated by the Airlock.
 - **API key auth only.** No OAuth2 in this release.
 - **Caching covers metadata only** (teams, projects, users, states, labels) with
   a 5-minute TTL. Issue and comment reads are never cached.
+- **Mutations are never auto-retried.** Linear has no idempotency key, so a retry
+  after an accepted write would duplicate it. Recovery is a fresh approval.
 
 ## Verification
 
-171 unit tests and 47 live tests against a real Linear workspace; all 36
+199 unit tests and 47 live tests against a real Linear workspace; all 36
 commands exercised end-to-end. Full source, architecture notes and the bundle
 build tool: <https://github.com/faizalmy/railcall-linear-module>
 
