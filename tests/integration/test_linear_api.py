@@ -1,6 +1,7 @@
 """Comprehensive integration tests for Linear module - creates visible test data."""
 
 import os
+import time
 import pytest
 from datetime import datetime, timedelta
 
@@ -45,6 +46,10 @@ pytestmark = pytest.mark.skipif(
 
 # Test data prefix for easy identification in Linear
 TEST_PREFIX = "[RailCall Test]"
+
+# Projects outlive the test that creates them - milestones and initiatives
+# attach to them - so they are torn down at session end instead of inline.
+_CREATED_PROJECTS = []
 
 # Linear enforces uniqueness on label names and rejects overlapping cycles, so a
 # re-run must not reuse the previous run's names.
@@ -267,6 +272,10 @@ class TestProjectManagement:
         # targetDate is a TimelessDate - confirm it actually persisted
         assert result["project"]["targetDate"] is not None
         print(f"✓ Created project: {result['project']['name']}")
+
+        # Registered for teardown; milestone and initiative tests use it first,
+        # so it cannot be deleted inline here.
+        _CREATED_PROJECTS.append(result["project"]["id"])
     
     def test_03_get_project_details(self):
         """Should get detailed project information."""
@@ -316,45 +325,41 @@ class TestWorkflowStates:
         for state in result["states"]:
             print(f"  - {state['name']} ({state['type']})")
     
-    def test_02_create_test_state(self):
-        """Should create a test workflow state."""
+    def test_02_create_and_update_a_state(self):
+        """Create a workflow state, update it, then archive it.
+
+        Linear caps a team at 50 workflow statuses. Earlier revisions of this
+        suite created one per run and never cleaned up, which eventually
+        exhausted the quota and made create_state fail for everyone. This test
+        owns its fixture end to end.
+        """
         teams = list_teams()
         team_id = teams["teams"][0]["id"]
-        
+
         # Linear caps workflow state names at 30 characters
-        result = create_state(
+        name = f"RC Test State {RUN_ID}"[:30]
+        created = create_state(
             team_id=team_id,
-            name=f"RC Test State {RUN_ID}"[:30],
+            name=name,
             color="#FF6B6B",
-            state_type="backlog"
-        )
-        
-        assert "state" in result
-        assert result["state"]["name"] == f"RC Test State {RUN_ID}"[:30]
-        print(f"✓ Created workflow state: {result['state']['name']}")
-    
-    def test_03_update_test_state(self):
-        """Should update the test workflow state."""
-        teams = list_teams()
-        team_id = teams["teams"][0]["id"]
-        
-        states = list_states(team_id=team_id, limit=250)
-        test_state = next(
-            (state for state in states["states"]
-             if state["name"] == f"RC Test State {RUN_ID}"[:30]),
-            None
-        )
-        assert test_state is not None, "state created by the previous test not found"
-        
-        updated_name = f"RC State Upd {RUN_ID}"[:30]
-        result = update_state(
-            state_id=test_state["id"],
-            name=updated_name,
-            color="#4ECDC4"
-        )
-        
-        assert result["state"]["name"] == updated_name
-        print(f"✓ Updated workflow state: {result['state']['name']}")
+            state_type="backlog",
+        )["state"]
+        state_id = created["id"]
+
+        try:
+            assert created["name"] == name
+            print(f"✓ Created workflow state: {created['name']}")
+
+            updated_name = f"RC State Upd {RUN_ID}"[:30]
+            updated = update_state(
+                state_id=state_id,
+                name=updated_name,
+                color="#4ECDC4",
+            )["state"]
+            assert updated["name"] == updated_name
+            print(f"✓ Updated workflow state: {updated['name']}")
+        finally:
+            _archive_state(state_id)
 
 
 class TestLabels:
@@ -369,46 +374,39 @@ class TestLabels:
         assert "labels" in result
         print(f"✓ Listed {len(result['labels'])} labels")
     
-    def test_02_create_test_labels(self):
-        """Should create test labels."""
+    def test_02_create_and_update_labels(self):
+        """Create labels, update one, then delete them all.
+
+        Earlier revisions left three labels behind per run; the workspace had
+        accumulated well over a hundred before this was fixed.
+        """
         teams = list_teams()
         team_id = teams["teams"][0]["id"]
-        
-        labels_created = []
+
+        created = []
         for i, color in enumerate(["#FF6B6B", "#4ECDC4", "#45B7D1"], 1):
-            result = create_label(
+            created.append(create_label(
                 team_id=team_id,
                 name=f"{TEST_PREFIX} Label {i} {RUN_ID}",
                 color=color,
-                description=f"Test label {i} created by integration tests"
-            )
-            labels_created.append(result["label"]["id"])
-        
-        assert len(labels_created) == 3
-        print("✓ Created 3 test labels")
-    
-    def test_03_update_test_label(self):
-        """Should update a test label."""
-        teams = list_teams()
-        team_id = teams["teams"][0]["id"]
-        
-        labels = list_labels(team_id=team_id, limit=250)
-        test_label = next(
-            (label for label in labels["labels"]
-             if label["name"] == f"{TEST_PREFIX} Label 1 {RUN_ID}"),
-            None
-        )
-        
-        assert test_label is not None, "label created by the previous test not found"
-        
-        result = update_label(
-            label_id=test_label["id"],
-            name=f"{TEST_PREFIX} Label 1 Upd {RUN_ID}",
-            color="#96CEB4"
-        )
-        
-        assert result["label"]["name"] == f"{TEST_PREFIX} Label 1 Upd {RUN_ID}"
-        print(f"✓ Updated label: {result['label']['name']}")
+                description=f"Test label {i} created by integration tests",
+            )["label"])
+
+        try:
+            assert len(created) == 3
+            print("✓ Created 3 test labels")
+
+            updated_name = f"{TEST_PREFIX} Label 1 Upd {RUN_ID}"
+            updated = update_label(
+                label_id=created[0]["id"],
+                name=updated_name,
+                color="#96CEB4",
+            )["label"]
+            assert updated["name"] == updated_name
+            print(f"✓ Updated label: {updated['name']}")
+        finally:
+            for label in created:
+                _delete_label(label["id"])
 
 
 class TestCycles:
@@ -423,13 +421,18 @@ class TestCycles:
         assert "cycles" in result
         print(f"✓ Listed {len(result['cycles'])} cycles")
     
-    def test_02_create_test_cycle(self):
-        """Should create a test cycle (sprint)."""
+    def test_02_cycle_lifecycle(self):
+        """Create a cycle, read it, update it, then archive it.
+
+        Cycles were three separate tests chained by name lookup, each leaving
+        the cycle behind. Collapsed into one lifecycle that owns its fixture:
+        the workspace had 47 orphaned sprints before this.
+        """
         teams = list_teams()
         team_id = teams["teams"][0]["id"]
-        
+
         # Push well past any existing cycle - Linear rejects overlapping ranges
-        existing = list_cycles(team_id=team_id)["cycles"]
+        existing = list_cycles(team_id=team_id, limit=250)["cycles"]
         latest_end = max(
             (datetime.fromisoformat(cycle["endsAt"].replace("Z", "+00:00")).replace(tzinfo=None)
              for cycle in existing if cycle.get("endsAt")),
@@ -437,58 +440,30 @@ class TestCycles:
         )
         starts_at = max(latest_end, datetime.now()) + timedelta(days=7)
         ends_at = starts_at + timedelta(days=14)
-        
+
         cycle_name = f"{TEST_PREFIX} Sprint {RUN_ID}"
-        result = create_cycle(
+        created = create_cycle(
             team_id=team_id,
             name=cycle_name,
             starts_at=starts_at.isoformat(),
-            ends_at=ends_at.isoformat()
-        )
-        
-        assert "cycle" in result
-        assert result["cycle"]["name"] == cycle_name
-        print(f"✓ Created cycle: {result['cycle']['name']}")
-    
-    def test_03_get_cycle_details(self):
-        """Should get detailed cycle information."""
-        teams = list_teams()
-        team_id = teams["teams"][0]["id"]
-        
-        cycles = list_cycles(team_id=team_id)
-        test_cycle = next(
-            (cycle for cycle in cycles["cycles"]
-             if cycle["name"] == f"{TEST_PREFIX} Sprint {RUN_ID}"),
-            None
-        )
-        
-        assert test_cycle is not None, "cycle created by the previous test not found"
-        
-        result = get_cycle(cycle_id=test_cycle["id"])
-        assert result["cycle"]["id"] == test_cycle["id"]
-        print(f"✓ Retrieved cycle: {result['cycle']['name']}")
-    
-    def test_04_update_cycle(self):
-        """Should update a test cycle."""
-        teams = list_teams()
-        team_id = teams["teams"][0]["id"]
-        
-        cycles = list_cycles(team_id=team_id, limit=250)
-        test_cycle = next(
-            (cycle for cycle in cycles["cycles"]
-             if cycle["name"] == f"{TEST_PREFIX} Sprint {RUN_ID}"),
-            None
-        )
-        
-        assert test_cycle is not None, "cycle created by test_02 not found"
-        
-        result = update_cycle(
-            cycle_id=test_cycle["id"],
-            name=f"{TEST_PREFIX} Sprint Upd {RUN_ID}"
-        )
-        
-        assert result["cycle"]["name"] == f"{TEST_PREFIX} Sprint Upd {RUN_ID}"
-        print(f"✓ Updated cycle: {result['cycle']['name']}")
+            ends_at=ends_at.isoformat(),
+        )["cycle"]
+        cycle_id = created["id"]
+
+        try:
+            assert created["name"] == cycle_name
+            print(f"✓ Created cycle: {created['name']}")
+
+            fetched = get_cycle(cycle_id=cycle_id)["cycle"]
+            assert fetched["id"] == cycle_id
+            print(f"✓ Retrieved cycle: {fetched['name']}")
+
+            updated_name = f"{TEST_PREFIX} Sprint Upd {RUN_ID}"
+            updated = update_cycle(cycle_id=cycle_id, name=updated_name)["cycle"]
+            assert updated["name"] == updated_name
+            print(f"✓ Updated cycle: {updated['name']}")
+        finally:
+            _archive_cycle(cycle_id)
 
 
 class TestComments:
@@ -728,6 +703,59 @@ class TestMilestones:
         print(f"✓ Updated milestone: {result['milestone']['name']}")
 
 
+def _delete_label(label_id):
+    """Remove a test label. Labels accumulate across runs otherwise."""
+    from handlers.client import execute_query
+    try:
+        execute_query(
+            "mutation($id: String!) { issueLabelDelete(id: $id) { success } }",
+            {"id": label_id},
+        )
+    except Exception:
+        pass
+
+
+def _archive_cycle(cycle_id):
+    """Remove a test cycle."""
+    from handlers.client import execute_query
+    try:
+        execute_query(
+            "mutation($id: String!) { cycleArchive(id: $id) { success } }",
+            {"id": cycle_id},
+        )
+    except Exception:
+        pass
+
+
+def _delete_project(project_id):
+    """Remove a test project."""
+    from handlers.client import execute_query
+    try:
+        execute_query(
+            "mutation($id: String!) { projectDelete(id: $id) { success } }",
+            {"id": project_id},
+        )
+    except Exception:
+        pass
+
+
+def _archive_state(state_id):
+    """Remove a test workflow state.
+
+    There is no delete/archive_state command in this release, so the suite
+    cleans up through the client. Workflow statuses are quota-limited (50 per
+    team), so leaving them behind eventually breaks create_state.
+    """
+    from handlers.client import execute_query
+    try:
+        execute_query(
+            "mutation($id: String!) { workflowStateArchive(id: $id) { success } }",
+            {"id": state_id},
+        )
+    except Exception:
+        pass
+
+
 def _delete_initiative(initiative_id):
     """Remove a test initiative. There is no delete_initiative command in this
     release, so the suite cleans up through the client directly."""
@@ -869,10 +897,21 @@ class TestArchiveAndSearch:
         )["issue"]
 
         try:
-            found = search_issues(query=needle, limit=10)
-            ids = [i["id"] for i in found["issues"]]
+            # Linear's search index is eventually consistent - a freshly created
+            # issue is sometimes searchable in under a second and sometimes not
+            # for tens of seconds. Poll rather than race it; the assertion is
+            # unchanged, only the patience is.
+            deadline = time.time() + 60
+            ids = []
+            while time.time() < deadline:
+                ids = [i["id"] for i in search_issues(query=needle, limit=10)["issues"]]
+                if issue["id"] in ids:
+                    break
+                time.sleep(3)
+
             assert issue["id"] in ids, (
-                "searchIssues did not match a term present only in the description"
+                "searchIssues did not match a term present only in the "
+                "description within 60s"
             )
             print(f"✓ Found {issue['identifier']} by a description-only term")
         finally:
@@ -896,3 +935,11 @@ class TestArchiveAndSearch:
         assert result["health"] == "onTrack"
         assert TEST_PREFIX in result["body"]
         print(f"✓ Posted project update: health={result['health']}")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _teardown_projects():
+    """Delete projects this session created, once everything that uses them is done."""
+    yield
+    for project_id in _CREATED_PROJECTS:
+        _delete_project(project_id)
