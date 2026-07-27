@@ -1000,3 +1000,4 @@ jobs:
 | 2026-07-26 | 2.0.0 | Expanded to production-grade scope (30 commands, OAuth2, caching, webhooks, tests, CI/CD) |
 | 2026-07-26 | 1.0.0 | Renumbered for the first marketplace release: 36 commands, signed RailCall bundle, no OAuth2 (see ARCHITECTURE §0) |
 | 2026-07-26 | 0.2.0 | Marketplace review response: dropped the `requests` dependency, vault-only credentials inside the Studio, mutations no longer auto-retried, expanded listing description. Renumbered down at the reviewer's request. |
+| 2026-07-27 | 0.2.1 | 401 error message now names the vault inside the Studio and the environment outside it — the previous text pointed Studio operators at LINEAR_API_KEY, which that path never reads. Store card title restored to "Linear Project Management". |

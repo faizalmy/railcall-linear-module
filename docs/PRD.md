@@ -1,6 +1,6 @@
 # Product Requirements Document: RailCall Linear Module (Production)
 
-**Version:** 0.2.0  
+**Version:** 0.2.1  
 **Status:** Planning  
 **Author:** AgentStack Labs  
 **Date:** 2026-07-26  
@@ -269,7 +269,7 @@ Transaction support for multi-issue operations.
 | Aug 6-7 | Set up CI/CD pipeline |
 | Aug 8-10 | Write comprehensive documentation |
 | Aug 11-12 | Performance testing + optimization |
-| Aug 13 | Publish v0.2.0 to marketplace |
+| Aug 13 | Publish v0.2.1 to marketplace |
 | Aug 14-25 | Iterate based on feedback |
 | Aug 25 | Contest submissions close |
 | Aug 29 | Winners announced |

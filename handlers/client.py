@@ -179,8 +179,16 @@ class LinearClient:
 
                 # Handle HTTP errors
                 if response.status_code == 401:
+                    # Name the credential store that actually applies here.
+                    # Pointing a Studio operator at an env var they never set
+                    # would send them somewhere this context does not read.
+                    if in_studio():
+                        raise AuthenticationError(
+                            "Invalid Linear API key in the station vault under the "
+                            "'linear' provider. Replace it in Studio → Sends → Configure."
+                        )
                     raise AuthenticationError(
-                        "Invalid API key. Check your LINEAR_API_KEY environment variable."
+                        "Invalid Linear API key. Check LINEAR_API_KEY in the environment."
                     )
 
                 if response.status_code == 429:

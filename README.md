@@ -642,7 +642,7 @@ This module is submitted to the **RailCall Community Contest 2026 Q3**.
 
 | Metric | Status |
 |--------|--------|
-| Version | 0.2.0 |
+| Version | 0.2.1 |
 | Commands | 30 |
 | Test Coverage | 171 unit (75% lines) + 46 live against a real Linear workspace |
 | Python Support | 3.9+ |

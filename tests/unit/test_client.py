@@ -275,3 +275,57 @@ class TestRateLimitHandling:
         for attempt in range(6):
             window = min(client.RETRY_BACKOFF ** attempt, client.MAX_BACKOFF)
             assert 0 <= client._backoff_seconds(attempt) <= window
+
+
+class TestAuthErrorMessages:
+    """A 401 must name the credential store that actually applies.
+
+    Pointing a Studio operator at LINEAR_API_KEY would send them somewhere the
+    Studio never reads - and a stray env-var mention also reads like env-based
+    auth to anyone grepping the published bundle.
+    """
+
+    def _install_helpers(self, vault):
+        from handlers import credentials
+        return patch.dict(
+            credentials.__dict__,
+            {"__rc_helpers__": {"vault_get": lambda p: vault.get(p)}},
+        )
+
+    def test_401_in_studio_points_at_the_vault(self):
+        vault = {"linear": {"api_key": "revoked_key"}}
+
+        with self._install_helpers(vault):
+            client = LinearClient()
+            with patch("handlers.client.urllib.request.urlopen") as urlopen, \
+                 patch("handlers.client.time.sleep"):
+                urlopen.side_effect = _http_error(401)
+
+                with pytest.raises(AuthenticationError) as excinfo:
+                    client.execute(QUERY)
+
+        message = str(excinfo.value)
+        assert "vault" in message
+        assert "LINEAR_API_KEY" not in message
+
+    def test_401_standalone_points_at_the_environment(self):
+        with patch.dict(os.environ, {"LINEAR_API_KEY": "revoked_key"}):
+            client = LinearClient()
+            with patch("handlers.client.urllib.request.urlopen") as urlopen, \
+                 patch("handlers.client.time.sleep"):
+                urlopen.side_effect = _http_error(401)
+
+                with pytest.raises(AuthenticationError) as excinfo:
+                    client.execute(QUERY)
+
+        message = str(excinfo.value)
+        assert "LINEAR_API_KEY" in message
+        assert "vault" not in message
+
+    def test_missing_credential_in_studio_points_at_the_vault(self):
+        """The construction-time branch, same rule."""
+        with self._install_helpers({}):
+            with pytest.raises(AuthenticationError) as excinfo:
+                LinearClient()
+
+        assert "vault" in str(excinfo.value)
