@@ -51,16 +51,15 @@ inside the Studio. The key is never written to disk, logged, or put in a cache k
 
 ## Scope
 
-42 commands across issues, teams, projects, users, states, labels, cycles,
+45 commands across issues, teams, projects, users, states, labels, cycles,
 comments, webhooks, milestones and **initiatives** — Linear's roadmap, where
-projects roll up under a goal and carry health updates. 18 reads run
-immediately; 24 writes are gated by the Airlock.
+projects roll up under a goal and carry health updates. Search uses Linear's own engine, so descriptions and comments match. 18 reads
+run immediately; 27 writes are gated by the Airlock.
 
 ## Known limitations
 
 - **UUIDs only** for issues, states and labels; no `ENG-123`. The team UUID is
   the exception — it defaults to the one saved with the key.
-- **`search_issues` matches titles only** — not descriptions or comments.
 - **Milestones are project-scoped.** `create_milestone` requires a `project_id`;
   Linear has no workspace-level milestone.
 - **`create_webhook` needs a scope** — one of `team_id` or `all_public_teams`.
@@ -72,7 +71,7 @@ immediately; 24 writes are gated by the Airlock.
 
 ## Verification
 
-226 unit tests and 53 live tests against a real Linear workspace; all 42
+236 unit tests and 56 live tests against a real Linear workspace; all 45
 commands exercised end-to-end. Full source, architecture notes and the bundle
 build tool: <https://github.com/faizalmy/railcall-linear-module>
 

@@ -1,9 +1,10 @@
 """RailCall Linear Module - Production Grade
 
-A comprehensive Linear integration for RailCall with 42 commands covering:
-- Issue management (8): list, get, create, update, delete, search, bulk_update, link
+A comprehensive Linear integration for RailCall with 45 commands covering:
+- Issue management (10): list, get, create, update, delete, archive, unarchive,
+  search, bulk_update, link
 - Team management (2): list, get
-- Project management (3): list, get, create
+- Project management (4): list, get, create, post update
 - User management (2): list, get
 - Workflow states (3): list, create, update
 - Labels (3): list, create, update
@@ -40,6 +41,10 @@ from .queries import (
     UPDATE_ISSUE,
     DELETE_ISSUE,
     CREATE_ISSUE_RELATION,
+    ARCHIVE_ISSUE,
+    UNARCHIVE_ISSUE,
+    SEARCH_ISSUES,
+    CREATE_PROJECT_UPDATE,
     LIST_TEAMS,
     GET_TEAM,
     LIST_PROJECTS,
@@ -353,43 +358,105 @@ def delete_issue(issue_id: str, context: Optional[Dict[str, Any]] = None) -> Dic
 def search_issues(
     query: str,
     team_id: Optional[str] = None,
+    include_comments: bool = True,
     limit: int = 50,
     context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Search issues by text query.
-    
+    """Full-text search across issues.
+
+    Uses Linear's own search engine rather than a title filter, so descriptions
+    and (by default) comments are searched too. `issueSearch` is deprecated;
+    `searchIssues` is the live entry point.
+
     Args:
-        query: Search query string
+        query: Search term
         team_id: Optional team filter
+        include_comments: Search comment bodies as well (default: True)
         limit: Maximum results (default: 50)
         context: RailCall context (unused)
-    
+
     Returns:
-        Dict with matching issues
+        Dict with matching issues, the query, and Linear's total match count
     """
     if not query or not query.strip():
         raise ValueError("query cannot be empty")
 
     limit = validate_limit(limit, max_limit=250)
+
+    variables: Dict[str, Any] = {
+        "term": query,
+        "includeComments": include_comments,
+    }
     if team_id:
         validate_team_id(team_id)
+        # searchIssues takes a team natively - no IssueFilter needed
+        variables["teamId"] = team_id
 
-    # Search text travels as a variable value, so it is never parsed as GraphQL
-    issue_filter: Dict[str, Any] = {"title": {"containsIgnoreCase": query}}
-    if team_id:
-        issue_filter["team"] = {"id": {"eq": team_id}}
-
-    variables = {"filter": issue_filter, "first": limit}
-    result = execute_query(LIST_ISSUES, variables)
-
-    # Extract issues from the result
-    issues = result.get("issues", {}).get("nodes", [])
+    issues = paginate_query(
+        query_func=_run_query,
+        query=SEARCH_ISSUES,
+        variables=variables,
+        limit=limit,
+        data_key="searchIssues",
+    )
 
     return {
         "issues": issues,
         "count": len(issues),
         "query": query,
     }
+
+
+def archive_issue(
+    issue_id: str,
+    trash: bool = False,
+    context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Archive an issue.
+
+    The reversible counterpart to delete_issue, and what teams normally want:
+    the issue leaves the active list but can be brought back with
+    unarchive_issue.
+
+    Args:
+        issue_id: Issue ID (required)
+        trash: Move to trash rather than archive (default: False)
+        context: RailCall context (unused)
+
+    Returns:
+        Dict with success status
+    """
+    validate_issue_id(issue_id)
+
+    result = execute_query(ARCHIVE_ISSUE, {"id": issue_id, "trash": trash})
+
+    if not result.get("issueArchive", {}).get("success"):
+        raise ValueError("Failed to archive issue")
+
+    return {"success": True, "archived_issue_id": issue_id, "trashed": trash}
+
+
+def unarchive_issue(
+    issue_id: str,
+    context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Restore a previously archived issue.
+
+    Args:
+        issue_id: Issue ID (required)
+        context: RailCall context (unused)
+
+    Returns:
+        Dict with success status
+    """
+    validate_issue_id(issue_id)
+
+    result = execute_query(UNARCHIVE_ISSUE, {"id": issue_id})
+
+    if not result.get("issueUnarchive", {}).get("success"):
+        raise ValueError("Failed to unarchive issue")
+
+    return {"success": True, "unarchived_issue_id": issue_id}
 
 
 def bulk_update_issues(
@@ -599,7 +666,7 @@ def get_team(
 
 
 # ============================================================================
-# PROJECT COMMANDS (3 commands)
+# PROJECT COMMANDS (4 commands)
 # ============================================================================
 
 @cached(ttl=METADATA_TTL)
@@ -713,6 +780,47 @@ def create_project(
     invalidate_all("list_projects")
 
     return {"project": result["projectCreate"]["project"]}
+
+
+def create_project_update(
+    project_id: str,
+    body: str,
+    health: Optional[str] = None,
+    context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Post a status update against a project.
+
+    The project-level counterpart to create_initiative_update; Linear uses the
+    same health vocabulary for both.
+
+    Args:
+        project_id: Project ID (required)
+        body: Update text, markdown (required)
+        health: onTrack, atRisk or offTrack
+        context: RailCall context (unused)
+
+    Returns:
+        Dict with the created update
+    """
+    validate_project_id(project_id)
+    validate_non_empty(body, "body")
+
+    if health is not None and health not in HEALTH_STATES:
+        raise ValueError("health must be one of: " + ", ".join(HEALTH_STATES))
+
+    input_data: Dict[str, Any] = {
+        "projectId": project_id,
+        "body": body,
+    }
+    if health is not None:
+        input_data["health"] = health
+
+    result = execute_query(CREATE_PROJECT_UPDATE, {"input": input_data})
+
+    if not result.get("projectUpdateCreate", {}).get("success"):
+        raise ValueError("Failed to create project update")
+
+    return {"update": result["projectUpdateCreate"]["projectUpdate"]}
 
 
 # ============================================================================
@@ -1580,7 +1688,8 @@ def update_milestone(
 # health updates over time.
 
 INITIATIVE_STATUSES = ["Proposed", "Planned", "Active", "Completed", "Canceled"]
-INITIATIVE_HEALTH = ["onTrack", "atRisk", "offTrack"]
+# Linear uses the same health vocabulary for initiative and project updates.
+HEALTH_STATES = ["onTrack", "atRisk", "offTrack"]
 
 
 def list_initiatives(
@@ -1809,8 +1918,8 @@ def create_initiative_update(
     validate_initiative_id(initiative_id)
     validate_non_empty(body, "body")
 
-    if health is not None and health not in INITIATIVE_HEALTH:
-        raise ValueError("health must be one of: " + ", ".join(INITIATIVE_HEALTH))
+    if health is not None and health not in HEALTH_STATES:
+        raise ValueError("health must be one of: " + ", ".join(HEALTH_STATES))
 
     input_data: Dict[str, Any] = {
         "initiativeId": initiative_id,

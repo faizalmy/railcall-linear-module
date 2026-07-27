@@ -108,6 +108,20 @@ def _rc_invoke(fn, inputs):
 
     # No artifact: these commands return JSON, not a file on disk.
     return result, None
+
+
+def _rc_adapter(fn):
+    """Bind one command function to the loader's (inputs, stamp) calling shape.
+
+    A factory rather than 45 near-identical `def`s: the loader only requires
+    that each `linear_*` name be callable, and the compact form saves ~1 KB
+    against the marketplace publish limit.
+    """
+
+    def adapter(inputs, stamp):
+        return _rc_invoke(fn, inputs)
+
+    return adapter
 '''
 
 
@@ -340,7 +354,10 @@ def build_manifest(source):
             # resolve_status() only checks that this is non-empty and that
             # `provider` is configured.
             "requires": [PROVIDER],
-            "preview": True,
+            # `preview` and `receipt_required` are both omitted: nothing in the
+            # runtime reads either (the only `preview` hit is `e.get("preview")`
+            # on an approval entry, a different structure), the airlock decides
+            # previewing from `mode`, and every execute path receipts regardless.
             # `receipt_required` is omitted: nothing in the runtime reads it
             # (it appears only in command_registry's own literals) and every
             # execute path emits a receipt regardless. Dropping it buys ~1 KB
@@ -374,16 +391,47 @@ def build_adapters(manifest):
     """One `linear_<command>` wrapper per declared command id."""
     lines = [ADAPTER_PREAMBLE]
 
+    lines.append("\n\n")
     for command in manifest["commands"]:
         cid = command["id"]
         source_fn = cid[len(COMMAND_PREFIX):]
-        lines.append(
-            f'\n\ndef {handler_function_name(cid)}(inputs, stamp):\n'
-            f'    """{command["title"]}"""\n'
-            f'    return _rc_invoke({source_fn}, inputs)\n'
-        )
+        lines.append(f"{handler_function_name(cid)} = _rc_adapter({source_fn})\n")
 
     return "".join(lines)
+
+
+PUBLISH_LIMIT = 102_400  # marketplace rejects a larger POST body with HTTP 413
+
+
+def publish_post_size(manifest, manifest_bytes, handler_bytes):
+    """Bytes the marketplace actually receives, not an approximation.
+
+    The manifest and handler are embedded as JSON *strings*, so every newline
+    and quote is escaped on the wire. Summing the raw lengths under-reports by
+    several KB - enough to wave through a bundle that then 413s, which is the
+    one failure this guard exists to prevent. Mirrors the submission dict built
+    by _market_publish_module in railcall_cli.py.
+    """
+    payload = {
+        "module_json": manifest_bytes.decode("utf-8"),
+        "handler_py": handler_bytes.decode("utf-8"),
+        "module_sig": "0" * 128,
+    }
+    submission = {
+        "id": manifest["id"],
+        "listing_type": "module",
+        "title": manifest.get("name") or manifest["id"],
+        "description": manifest.get("description") or "",
+        "category": "Ops",
+        "price_cents": 0,
+        "payload": payload,
+        "payload_sha": "0" * 64,
+        "publisher_pubkey": manifest.get("publisher_pubkey") or "",
+        "publisher_sig": "0" * 128,
+        "created_at": "0000-00-00T00:00:00Z",
+        "version": manifest.get("version") or "",
+    }
+    return len(json.dumps(submission).encode("utf-8"))
 
 
 def canonical(obj):
@@ -473,9 +521,16 @@ def main():
         raise SystemExit(f"Generated handler.py does not compile: {exc}")
 
     if args.check:
-        print(f"bundle OK: {len(manifest['commands'])} commands, "
-              f"{len(handler_bytes):,} bytes, compiles clean")
-        return 0
+        # Size is always judged on the MINIFIED form, because that is what gets
+        # published; the readable build is a development artifact and is
+        # expected to exceed the limit.
+        publishable = minify(handler_text).encode("utf-8") if not args.minify else handler_bytes
+        size = publish_post_size(manifest, canonical(manifest), publishable)
+        status = "OK" if size < PUBLISH_LIMIT else "TOO LARGE"
+        print(f"bundle {status}: {len(manifest['commands'])} commands, "
+              f"{len(publishable):,} bytes minified, "
+              f"POST {size:,} of {PUBLISH_LIMIT:,}, compiles clean")
+        return 0 if size < PUBLISH_LIMIT else 1
 
     seed_hex, pubkey_hex = load_publisher_seed()
     if pubkey_hex != manifest["publisher_pubkey"]:
@@ -503,16 +558,14 @@ def main():
     with open(os.path.join(out_dir, "module.sig"), "w", encoding="utf-8") as handle:
         handle.write(signature_hex + "\n")
 
-    # The marketplace rejects a POST body over 100 KiB, and the body is the
-    # manifest plus the handler plus JSON overhead.
-    post_estimate = len(manifest_bytes) + len(handler_bytes) + 2048
-    limit = 102_400
+    post_size = publish_post_size(manifest, manifest_bytes, handler_bytes)
 
     print(f"bundle:    {out_dir}")
     print(f"commands:  {len(manifest['commands'])}")
     print(f"handler:   {len(handler_bytes):,} bytes" + (" (minified)" if args.minify else ""))
-    print(f"POST size: ~{post_estimate:,} of {limit:,} bytes"
-          + ("" if post_estimate < limit else "  <-- TOO LARGE, rebuild with --minify"))
+    print(f"POST size: {post_size:,} of {PUBLISH_LIMIT:,} bytes"
+          + (f"  ({PUBLISH_LIMIT - post_size:,} spare)" if post_size < PUBLISH_LIMIT
+             else "  <-- TOO LARGE, publish will fail with HTTP 413"))
     print(f"signature: verified against {manifest['publisher_pubkey'][:16]}...")
 
     if args.install:

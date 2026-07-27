@@ -8,6 +8,8 @@ from handlers.handler import (
     create_issue,
     update_issue,
     delete_issue,
+    archive_issue,
+    unarchive_issue,
     search_issues,
     bulk_update_issues,
     link_issues,
@@ -16,6 +18,7 @@ from handlers.handler import (
     list_projects,
     get_project,
     create_project,
+    create_project_update,
     list_users,
     get_user,
     list_states,
@@ -120,12 +123,13 @@ class TestIssueCommands:
     def test_search_issues_success(self, mock_query):
         """Should search issues successfully."""
         mock_query.return_value = {
-            "issues": {
+            "searchIssues": {
                 "nodes": [{"id": "issue-1", "title": "Search Result"}],
-                "pageInfo": {"hasNextPage": False, "endCursor": None}
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+                "totalCount": 1,
             }
         }
-        
+
         result = search_issues(query="test")
         assert "issues" in result
         assert len(result["issues"]) == 1
@@ -473,17 +477,40 @@ class TestGraphQLVariableShapes:
         assert "filter" not in mock_query.call_args[0][1]
 
     @patch('handlers.handler.execute_query')
-    def test_search_issues_sends_object_filter(self, mock_query):
-        """Should pass the search term as a variable value, not query text."""
+    def test_search_issues_sends_the_term_as_a_variable(self, mock_query):
+        """The term travels as a typed variable, never interpolated into the query.
+
+        searchIssues takes `term` and `teamId` natively - no IssueFilter is built.
+        """
         mock_query.return_value = {
-            "issues": {"nodes": [], "pageInfo": {"hasNextPage": False, "endCursor": None}}
+            "searchIssues": {
+                "nodes": [], "pageInfo": {"hasNextPage": False, "endCursor": None},
+                "totalCount": 0,
+            }
         }
 
         search_issues(query='" } } bad { "', team_id="123e4567-e89b-12d3-a456-426614174000")
 
         variables = mock_query.call_args[0][1]
-        assert variables["filter"]["title"] == {"containsIgnoreCase": '" } } bad { "'}
-        assert variables["filter"]["team"] == {"id": {"eq": "123e4567-e89b-12d3-a456-426614174000"}}
+        assert variables["term"] == '" } } bad { "'
+        assert variables["teamId"] == "123e4567-e89b-12d3-a456-426614174000"
+        assert "filter" not in variables
+
+    @patch('handlers.handler.execute_query')
+    def test_search_includes_comments_by_default(self, mock_query):
+        """This is what fixes the old title-only limitation."""
+        mock_query.return_value = {
+            "searchIssues": {
+                "nodes": [], "pageInfo": {"hasNextPage": False, "endCursor": None},
+                "totalCount": 0,
+            }
+        }
+
+        search_issues(query="login")
+        assert mock_query.call_args[0][1]["includeComments"] is True
+
+        search_issues(query="login", include_comments=False)
+        assert mock_query.call_args[0][1]["includeComments"] is False
 
     @patch('handlers.handler.execute_query')
     def test_search_issues_rejects_empty_query(self, mock_query):
@@ -1163,3 +1190,100 @@ class TestInitiativeCommands:
         }
         assert list_initiatives()["count"] == 1
         assert mock_query.call_count > first
+
+
+class TestArchiveIssue:
+    """Archiving is the reversible counterpart to delete_issue.
+
+    Teams archive; permanent deletion is the rare case. Shipping only the rare
+    one was the gap.
+    """
+
+    ISSUE = "123e4567-e89b-12d3-a456-426614174000"
+
+    @patch('handlers.handler.execute_query')
+    def test_archive_defaults_to_not_trashing(self, mock_query):
+        mock_query.return_value = {"issueArchive": {"success": True}}
+
+        result = archive_issue(issue_id=self.ISSUE)
+
+        assert mock_query.call_args[0][1] == {"id": self.ISSUE, "trash": False}
+        assert result["success"] is True
+        assert result["trashed"] is False
+
+    @patch('handlers.handler.execute_query')
+    def test_archive_can_trash(self, mock_query):
+        mock_query.return_value = {"issueArchive": {"success": True}}
+
+        result = archive_issue(issue_id=self.ISSUE, trash=True)
+
+        assert mock_query.call_args[0][1]["trash"] is True
+        assert result["trashed"] is True
+
+    @patch('handlers.handler.execute_query')
+    def test_unarchive_restores(self, mock_query):
+        mock_query.return_value = {"issueUnarchive": {"success": True}}
+
+        result = unarchive_issue(issue_id=self.ISSUE)
+
+        assert mock_query.call_args[0][1] == {"id": self.ISSUE}
+        assert result["unarchived_issue_id"] == self.ISSUE
+
+    @patch('handlers.handler.execute_query')
+    def test_both_validate_the_id(self, mock_query):
+        for fn in (archive_issue, unarchive_issue):
+            with pytest.raises(ValidationError):
+                fn(issue_id="not-a-uuid")
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_failure_is_not_reported_as_success(self, mock_query):
+        mock_query.return_value = {"issueArchive": {"success": False}}
+
+        with pytest.raises(ValueError, match="Failed to archive"):
+            archive_issue(issue_id=self.ISSUE)
+
+
+class TestProjectUpdate:
+    """Projects use the same health vocabulary as initiatives."""
+
+    PROJECT = "123e4567-e89b-12d3-a456-426614174000"
+
+    @patch('handlers.handler.execute_query')
+    def test_posts_body_and_health(self, mock_query):
+        mock_query.return_value = {
+            "projectUpdateCreate": {"success": True, "projectUpdate": {"id": "u-1"}}
+        }
+
+        create_project_update(
+            project_id=self.PROJECT, body="Shipped the migration", health="atRisk"
+        )
+
+        payload = mock_query.call_args[0][1]["input"]
+        assert payload == {
+            "projectId": self.PROJECT,
+            "body": "Shipped the migration",
+            "health": "atRisk",
+        }
+
+    @patch('handlers.handler.execute_query')
+    def test_health_is_optional(self, mock_query):
+        mock_query.return_value = {
+            "projectUpdateCreate": {"success": True, "projectUpdate": {"id": "u-1"}}
+        }
+
+        create_project_update(project_id=self.PROJECT, body="No health set")
+
+        assert "health" not in mock_query.call_args[0][1]["input"]
+
+    @patch('handlers.handler.execute_query')
+    def test_rejects_unknown_health(self, mock_query):
+        with pytest.raises(ValueError, match="health must be one of"):
+            create_project_update(project_id=self.PROJECT, body="x", health="green")
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_rejects_empty_body(self, mock_query):
+        with pytest.raises(ValidationError):
+            create_project_update(project_id=self.PROJECT, body="  ")
+        mock_query.assert_not_called()

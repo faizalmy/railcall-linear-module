@@ -2,11 +2,11 @@
 
 <div align="center">
 
-**Production-grade Linear integration for RailCall with 42 commands**
+**Production-grade Linear integration for RailCall with 45 commands**
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-226%20unit%20%2B%2053%20live-brightgreen.svg)](./tests/)
+[![Tests](https://img.shields.io/badge/tests-236%20unit%20%2B%2056%20live-brightgreen.svg)](./tests/)
 [![Coverage](https://img.shields.io/badge/coverage-77%25-yellowgreen.svg)](./tests/)
 
 *Comprehensive Linear integration with automatic retry, rate limiting, caching, and enterprise-grade error handling*
@@ -54,12 +54,12 @@ eventually asks "who closed those twelve tickets?"
 
 ### Scope
 
-42 commands across 11 categories with built-in resilience, caching, and
-comprehensive error handling. 18 reads execute immediately; 24 writes are
+45 commands across 11 categories with built-in resilience, caching, and
+comprehensive error handling. 18 reads execute immediately; 27 writes are
 `write_requires_approval` and gated by the Approval Airlock.
 
 **Key Benefits:**
-- ✅ **42 Commands** - Full coverage of Linear's API surface
+- ✅ **45 Commands** - Full coverage of Linear's API surface
 - ✅ **Automatic Retry** - Capped exponential backoff with jitter, honoring `Retry-After`
 - ✅ **Rate Limiting** - Built-in protection against Linear's API limits (50 req/10s)
 - ✅ **Caching** - Redis or in-memory, per-workspace scoped, for metadata reads
@@ -112,7 +112,7 @@ comprehensive error handling. 18 reads execute immediately; 24 writes are
 railcall market install agentstack-labs/linear
 ```
 
-The Studio verifies the bundle's Ed25519 signature and registers its 42 commands
+The Studio verifies the bundle's Ed25519 signature and registers its 45 commands
 on the next module reload.
 
 ### Install from Source
@@ -234,7 +234,7 @@ there is no vault to read.
 
 ### Read commands
 
-16 of the 42 commands are read-only and execute without approval. Start with
+16 of the 45 commands are read-only and execute without approval. Start with
 `linear.list_teams` - every other command needs a team UUID:
 
 ```json
@@ -243,7 +243,7 @@ there is no vault to read.
 
 ### Write commands
 
-The remaining 24 are `write_requires_approval`: the Studio renders a preview,
+The remaining 27 are `write_requires_approval`: the Studio renders a preview,
 you approve, and the run emits a signed receipt.
 
 ```json
@@ -268,7 +268,7 @@ teams = list_teams(limit=50)
 
 ## 📚 Commands Reference
 
-### Issue Management (8 commands)
+### Issue Management (10 commands)
 
 | Command | Description | Side Effects |
 |---------|-------------|--------------|
@@ -276,8 +276,10 @@ teams = list_teams(limit=50)
 | `get_issue` | Get detailed information about a specific issue | none |
 | `create_issue` | Create a new issue | write |
 | `update_issue` | Update an existing issue | write |
-| `delete_issue` | Delete an issue | write |
-| `search_issues` | Search issues by text query | none |
+| `delete_issue` | Delete an issue permanently | write |
+| `archive_issue` | Archive an issue (reversible) | write |
+| `unarchive_issue` | Restore an archived issue | write |
+| `search_issues` | Full-text search across titles, descriptions and comments | none |
 | `bulk_update_issues` | Update multiple issues at once | write |
 | `link_issues` | Link two issues with a relationship | write |
 
@@ -288,13 +290,14 @@ teams = list_teams(limit=50)
 | `list_teams` | List all teams in the workspace | none |
 | `get_team` | Get detailed information about a specific team | none |
 
-### Project Management (3 commands)
+### Project Management (4 commands)
 
 | Command | Description | Side Effects |
 |---------|-------------|--------------|
 | `list_projects` | List all projects in the workspace | none |
 | `get_project` | Get detailed information about a specific project | none |
 | `create_project` | Create a new project | write |
+| `create_project_update` | Post a status update against a project | write |
 
 ### User Management (2 commands)
 
@@ -445,7 +448,6 @@ Honest scope boundaries, so nothing surprises you after install:
 | Limitation | Detail |
 |------------|--------|
 | **UUIDs only** | No command accepts `ENG-123` or a label name. The team UUID is the exception — it defaults to the one saved with the credential. |
-| **`search_issues` matches titles only** | Uses `title: { containsIgnoreCase }`. Descriptions and comments are not searched, so this is not Linear's global search. |
 | **Milestones are project-scoped** | `create_milestone` requires `project_id`. Linear has no workspace-level milestone — the type is `ProjectMilestone`. |
 | **`create_webhook` needs a scope** | Exactly one of `team_id` or `all_public_teams`, even though the manifest lists only `url` as required. |
 | **`create_state` rejects `triage`** | Triage is a per-team setting in Linear, not a creatable workflow state. Valid types: backlog, unstarted, started, completed, canceled. |
@@ -461,7 +463,7 @@ Honest scope boundaries, so nothing surprises you after install:
 
 ```
 railcall-linear-module/
-├── module.json              # Authoring manifest (42 commands)
+├── module.json              # Authoring manifest (45 commands)
 ├── tools/
 │   └── build_bundle.py      # Generates + signs the RailCall bundle
 ├── dist/                    # Generated bundle (gitignored)
@@ -479,7 +481,7 @@ railcall-linear-module/
 │       ├── errors.py        # Error handling utilities
 │       ├── validation.py    # Input validation
 │       └── pagination.py    # Pagination utilities
-├── tests/                   # 226 unit + 53 live (package + generated bundle)
+├── tests/                   # 236 unit + 56 live (package + generated bundle)
 ├── docs/                    # Documentation
 └── .github/workflows/       # CI/CD pipeline
 ```
@@ -693,9 +695,9 @@ This module is submitted to the **RailCall Community Contest 2026 Q3**.
 
 | Metric | Status |
 |--------|--------|
-| Version | 0.2.5 |
+| Version | 0.2.6 |
 | Commands | 30 |
-| Test Coverage | 226 unit (77% lines) + 53 live against a real Linear workspace |
+| Test Coverage | 236 unit (77% lines) + 56 live against a real Linear workspace |
 | Python Support | 3.9+ |
 | License | MIT |
 | Production Ready | ✅ Yes |

@@ -1,7 +1,7 @@
 # Architecture Document: RailCall Linear Module (Production)
 
-**Version:** 0.2.5  
-**Status:** Planning — this document describes the target design, not all of which ships in 0.2.5  
+**Version:** 0.2.6  
+**Status:** Planning — this document describes the target design, not all of which ships in 0.2.6  
 **Author:** AgentStack Labs  
 **Date:** 2026-07-26  
 **Contest:** RailCall Community Contest 2026 Q3 — Track A (Best Module)
@@ -10,11 +10,11 @@
 
 ## 0. Implementation Status
 
-What this document describes versus what version 0.2.5 actually ships:
+What this document describes versus what version 0.2.6 actually ships:
 
-| Area | Designed here | Shipped in 0.2.5 |
+| Area | Designed here | Shipped in 0.2.6 |
 |------|---------------|------------------|
-| 42 commands | ✅ | ✅ |
+| 45 commands | ✅ | ✅ |
 | Signed module bundle the Studio loader accepts | ✅ | ✅ — built by `tools/build_bundle.py`, Ed25519-signed, all 36 commands register |
 | Credential from the station vault (`linear` provider) | ✅ | ✅ — vault is the **only** source inside the Studio; `LINEAR_API_KEY` applies to standalone use |
 | Mutations never auto-retried (Linear has no idempotency key) | ✅ | ✅ |
@@ -69,7 +69,7 @@ Anything marked ❌ is a v2.1 target. No code in this repository depends on it.
 | **Validator** | Validates inputs against `input_schema` in `module.json` |
 | **Executor** | Runs handler functions from `handlers/handler.py` |
 | **Receipt** | Ed25519-signed record of command execution |
-| **handler.py** | Implements 42 commands, calls Linear GraphQL API |
+| **handler.py** | Implements 45 commands, calls Linear GraphQL API |
 | **Linear API** | External service providing project management data |
 
 ### 1.3 Data Flow
@@ -136,7 +136,7 @@ railcall-linear-module/
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `module.json` | Authoring manifest: 42 commands, auth, side_effects | 929 |
+| `module.json` | Authoring manifest: 45 commands, auth, side_effects | 929 |
 | `handlers/handler.py` | All 42 command implementations | 1564 |
 | `handlers/client.py` | GraphQL client: stdlib urllib, capped retry, mutations never replayed | 295 |
 | `handlers/credentials.py` | Vault inside the Studio, environment standalone | 123 |
@@ -1087,7 +1087,7 @@ railcall market install agentstack-labs/linear
 // module.json
 {
   "slug": "agentstack-labs/linear",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "changelog": "https://github.com/faizalmy/railcall-linear-module/blob/main/CHANGELOG.md"
 }
 ```

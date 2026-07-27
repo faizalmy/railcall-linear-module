@@ -25,6 +25,20 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
 import build_bundle  # noqa: E402
 
 
+def _exec_bundle(handler_text):
+    """Exec the bundle the way the Studio loader does, returning its namespace."""
+    namespace = {
+        "__name__": "railcall_module_test",
+        "__file__": "handler.py",
+        "__rc_helpers__": {},
+        "os": os,
+        "json": json,
+        "time": __import__("time"),
+    }
+    exec(compile(handler_text, "handler.py", "exec"), namespace)
+    return namespace
+
+
 @pytest.fixture(scope="module")
 def source_manifest():
     with open(build_bundle.SOURCE_MANIFEST, "r", encoding="utf-8") as handle:
@@ -146,30 +160,36 @@ class TestFlattenedHandler:
         assert callable(namespace.get("linear_list_teams"))
 
     def test_every_command_has_a_matching_adapter(self, manifest, handler_text):
-        """fn_name = cid.replace('.', '_') - a mismatch rejects that command."""
-        tree = ast.parse(handler_text)
-        defined = {
-            node.name for node in tree.body if isinstance(node, ast.FunctionDef)
-        }
+        """fn_name = cid.replace('.', '_') - a mismatch rejects that command.
+
+        Adapters are bound via a factory, so they are module-level assignments
+        rather than `def`s. The loader only requires the name be callable.
+        """
+        namespace = _exec_bundle(handler_text)
 
         missing = [
             command["id"]
             for command in manifest["commands"]
-            if build_bundle.handler_function_name(command["id"]) not in defined
+            if not callable(
+                namespace.get(build_bundle.handler_function_name(command["id"]))
+            )
         ]
         assert missing == [], f"no callable adapter for: {missing}"
 
     def test_adapters_take_the_loader_signature(self, handler_text):
         """LOCAL_HANDLERS[cid](inputs, stamp) - two positional args."""
-        tree = ast.parse(handler_text)
-        adapters = [
-            node for node in tree.body
-            if isinstance(node, ast.FunctionDef) and node.name.startswith("linear_")
-        ]
+        import inspect
+
+        namespace = _exec_bundle(handler_text)
+        adapters = {
+            name: obj for name, obj in namespace.items()
+            if name.startswith("linear_") and callable(obj)
+        }
         assert adapters
-        for node in adapters:
-            args = [a.arg for a in node.args.args]
-            assert args == ["inputs", "stamp"], (node.name, args)
+
+        for name, fn in adapters.items():
+            params = list(inspect.signature(fn).parameters)
+            assert params == ["inputs", "stamp"], (name, params)
 
 
 class TestAdapterBehavior:
@@ -279,26 +299,13 @@ class TestMarketplaceSizeLimit:
     bundle does not fit and publishing fails with HTTP 413.
     """
 
-    LIMIT = 102_400
+    LIMIT = build_bundle.PUBLISH_LIMIT
 
     def _post_size(self, manifest, handler_text):
-        """Mirror _market_publish's payload: three strings in a JSON envelope."""
-        payload = {
-            "module_json": json.dumps(manifest),
-            "handler_py": handler_text,
-            "module_sig": "0" * 128,
-        }
-        submission = {
-            "id": manifest["id"],
-            "listing_type": "module",
-            "title": manifest.get("name", ""),
-            "description": manifest.get("description", ""),
-            "category": "Ops",
-            "price_cents": 0,
-            "payload": payload,
-            "payload_sha": "0" * 64,
-        }
-        return len(json.dumps(submission).encode("utf-8"))
+        """Same measurement the build reports, so guard and report agree."""
+        return build_bundle.publish_post_size(
+            manifest, build_bundle.canonical(manifest), handler_text.encode("utf-8")
+        )
 
     def test_minified_bundle_fits(self, manifest):
         minified = build_bundle.minify(

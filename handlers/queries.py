@@ -146,6 +146,73 @@ mutation($id: String!) {
 }
 """
 
+ARCHIVE_ISSUE = """
+mutation($id: String!, $trash: Boolean) {
+  issueArchive(id: $id, trash: $trash) {
+    success
+  }
+}
+"""
+
+UNARCHIVE_ISSUE = """
+mutation($id: String!) {
+  issueUnarchive(id: $id) {
+    success
+  }
+}
+"""
+
+SEARCH_ISSUES = """
+query($term: String!, $first: Int, $after: String, $includeComments: Boolean, $teamId: String) {
+  searchIssues(term: $term, first: $first, after: $after, includeComments: $includeComments, teamId: $teamId) {
+    nodes {
+      id
+      identifier
+      title
+      description
+      priority
+      state {
+        id
+        name
+      }
+      assignee {
+        id
+        name
+      }
+      team {
+        id
+        key
+      }
+      createdAt
+      updatedAt
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    totalCount
+  }
+}
+"""
+
+CREATE_PROJECT_UPDATE = """
+mutation($input: ProjectUpdateCreateInput!) {
+  projectUpdateCreate(input: $input) {
+    success
+    projectUpdate {
+      id
+      body
+      health
+      createdAt
+      user {
+        id
+        name
+      }
+    }
+  }
+}
+"""
+
 CREATE_ISSUE_RELATION = """
 mutation($input: IssueRelationCreateInput!) {
   issueRelationCreate(input: $input) {

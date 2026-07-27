@@ -10,11 +10,12 @@ from datetime import datetime, timedelta
 from handlers.handler import (
     # Issues
     list_issues, get_issue, create_issue, update_issue, delete_issue,
+    archive_issue, unarchive_issue,
     search_issues, bulk_update_issues, link_issues,
     # Teams
     list_teams, get_team,
     # Projects
-    list_projects, get_project, create_project,
+    list_projects, get_project, create_project, create_project_update,
     # Users
     list_users, get_user,
     # States
@@ -819,3 +820,79 @@ class TestInitiatives:
         """The enum guard runs before the API call."""
         with pytest.raises(ValueError, match="status must be one of"):
             create_initiative(name="x", status="Shipped")
+
+
+class TestArchiveAndSearch:
+    """The v0.2.6 additions, against the real API."""
+
+    def test_01_archive_then_unarchive(self):
+        """Archiving removes an issue from the active list; unarchiving restores it."""
+        team_id = list_teams()["teams"][0]["id"]
+        issue = create_issue(
+            title=f"{TEST_PREFIX} Archive round-trip {RUN_ID}",
+            team_id=team_id,
+        )["issue"]
+
+        try:
+            archived = archive_issue(issue_id=issue["id"])
+            assert archived["success"] is True
+            assert archived["trashed"] is False
+
+            active = [i["id"] for i in list_issues(limit=250)["issues"]]
+            assert issue["id"] not in active, "archived issue still in the active list"
+            print(f"✓ Archived {issue['identifier']} - gone from list_issues")
+
+            restored = unarchive_issue(issue_id=issue["id"])
+            assert restored["success"] is True
+
+            active = [i["id"] for i in list_issues(limit=250)["issues"]]
+            assert issue["id"] in active, "unarchived issue did not come back"
+            print(f"✓ Unarchived {issue['identifier']} - back in list_issues")
+        finally:
+            try:
+                delete_issue(issue_id=issue["id"])
+            except Exception:
+                pass
+
+    def test_02_search_reaches_beyond_titles(self):
+        """The whole point of moving to searchIssues.
+
+        Creates an issue whose distinctive term appears ONLY in the description,
+        so a title-only match could not find it.
+        """
+        team_id = list_teams()["teams"][0]["id"]
+        needle = f"zzsearchprobe{RUN_ID}".replace("-", "")
+        issue = create_issue(
+            title=f"{TEST_PREFIX} Search probe {RUN_ID}",
+            team_id=team_id,
+            description=f"This body contains {needle} and the title does not.",
+        )["issue"]
+
+        try:
+            found = search_issues(query=needle, limit=10)
+            ids = [i["id"] for i in found["issues"]]
+            assert issue["id"] in ids, (
+                "searchIssues did not match a term present only in the description"
+            )
+            print(f"✓ Found {issue['identifier']} by a description-only term")
+        finally:
+            try:
+                delete_issue(issue_id=issue["id"])
+            except Exception:
+                pass
+
+    def test_03_create_project_update(self):
+        """Projects carry the same health updates as initiatives."""
+        projects = list_projects()["projects"]
+        if not projects:
+            pytest.skip("workspace has no project to post an update against")
+
+        result = create_project_update(
+            project_id=projects[0]["id"],
+            body=f"{TEST_PREFIX} status {RUN_ID}",
+            health="onTrack",
+        )["update"]
+
+        assert result["health"] == "onTrack"
+        assert TEST_PREFIX in result["body"]
+        print(f"✓ Posted project update: health={result['health']}")
