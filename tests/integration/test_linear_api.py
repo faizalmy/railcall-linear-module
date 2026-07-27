@@ -62,6 +62,7 @@ def _track_issue(issue):
     _CREATED_ISSUES.append(issue["id"])
     return issue
 
+
 # Linear enforces uniqueness on label names and rejects overlapping cycles, so a
 # re-run must not reuse the previous run's names.
 RUN_ID = datetime.now().strftime("%m%d-%H%M%S")
