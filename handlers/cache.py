@@ -1,4 +1,11 @@
-"""Caching layer with Redis and in-memory fallback."""
+"""Caching layer with Redis and in-memory fallback.
+
+Redis is for standalone or self-hosted runs only. `tools/build_bundle.py`
+removes `RedisCache` from the published bundle and replaces the factory with a
+raise, so the shipped artifact always caches in memory and performs no
+environment read - `_create_redis_backend` below is the package's only
+`os.environ` use outside `credentials.py`, and neither survives the build.
+"""
 
 import hashlib
 import logging

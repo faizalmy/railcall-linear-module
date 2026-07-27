@@ -188,6 +188,17 @@ def minify(text):
             # A function whose only statement was a docstring still needs a body.
             node.body = body[1:] or [ast.Pass()]
 
+    # Flattening concatenates eight files, so seven of their module docstrings
+    # land mid-body as bare string expressions - not `Module.body[0]`, so the
+    # pass above leaves them. They are dead statements either way; dropping them
+    # reclaims ~2 KB against the publish limit.
+    tree.body = [
+        node for node in tree.body
+        if not (isinstance(node, ast.Expr)
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str))
+    ]
+
     return MINIFIED_HEADER + collapse_graphql(ast.unparse(ast.fix_missing_locations(tree)))
 
 
@@ -229,6 +240,69 @@ def neutralize_standalone(text):
     return ast.unparse(ast.fix_missing_locations(tree)) + "\n"
 
 
+# The Redis cache backend is the other place the package touches the process
+# environment. Inside the Studio it is unreachable anyway - the loader execs the
+# bundle in an isolated namespace and the `redis` package is not installed - but
+# an unreachable REDIS_PASSWORD read still reads as environment-based config to
+# anyone auditing the shipped file, and it costs bytes against the publish limit.
+# The source keeps Redis for standalone/self-hosted use; the bundle drops it and
+# always caches in memory.
+REDIS_CLASS = "RedisCache"
+REDIS_MANAGER = "CacheManager"
+REDIS_FACTORY = "_create_redis_backend"
+REDIS_UNAVAILABLE = (
+    "Redis is unavailable in the published bundle; the in-memory cache is used"
+)
+
+
+def strip_redis(text):
+    """Remove the Redis backend so the bundle reads no environment variable.
+
+    Drops the `RedisCache` class outright and replaces the factory body with a
+    raise. `CacheManager.__init__` already falls back to `MemoryCache` on
+    RuntimeError, so auto-detection keeps working and an explicit
+    `CacheManager("redis")` fails with a sentence that says why.
+    """
+    tree = ast.parse(text)
+    removed = replaced = False
+    body = []
+
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name == REDIS_CLASS:
+            removed = True
+            continue
+        if isinstance(node, ast.ClassDef) and node.name == REDIS_MANAGER:
+            for item in node.body:
+                if not (isinstance(item, ast.FunctionDef)
+                        and item.name == REDIS_FACTORY):
+                    continue
+                item.body = [ast.Raise(
+                    exc=ast.Call(
+                        func=ast.Name(id="RuntimeError", ctx=ast.Load()),
+                        args=[ast.Constant(value=REDIS_UNAVAILABLE)],
+                        keywords=[],
+                    ),
+                    cause=None,
+                )]
+                # The annotation named the class we just deleted, and Python
+                # evaluates it at def time - leaving it would NameError on exec.
+                item.returns = None
+                replaced = True
+        body.append(node)
+
+    if not (removed and replaced):
+        raise SystemExit(
+            "build_bundle: expected to strip "
+            f"{REDIS_CLASS} (found: {removed}) and neutralize "
+            f"{REDIS_MANAGER}.{REDIS_FACTORY} (found: {replaced}). If either "
+            "was renamed, update the constants - otherwise the bundle would "
+            "ship an environment-based cache configuration."
+        )
+
+    tree.body = body
+    return ast.unparse(ast.fix_missing_locations(tree)) + "\n"
+
+
 def read_source(rel_path):
     with open(os.path.join(REPO_ROOT, rel_path), "r", encoding="utf-8") as handle:
         return handle.read()
@@ -247,6 +321,8 @@ def flatten_sources():
         body = strip_relative_imports(read_source(rel_path))
         if rel_path == "handlers/credentials.py":
             body = neutralize_standalone(body)
+        if rel_path == "handlers/cache.py":
+            body = strip_redis(body)
         chunks.append(
             f"\n# {'=' * 70}\n# source: {rel_path}\n# {'=' * 70}\n\n{body.strip()}\n"
         )
@@ -376,6 +452,11 @@ def build_manifest(source):
         "author": source["author"],
         "license": source["license"],
         "repository": source.get("repository"),
+        # The store card renders these as clickable badges; keeping them as
+        # structured fields rather than prose in `description` is what makes
+        # that automatic.
+        "homepage": source.get("homepage"),
+        "tests_url": source.get("tests_url"),
         "provider": PROVIDER,
         "publisher_pubkey": source["publisher_pubkey"],
         "license_required": False,

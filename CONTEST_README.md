@@ -34,20 +34,21 @@ so a re-run resumes exactly where it left off instead of redoing the work.
 
 Small engineering teams whose triage, sprint setup and release bookkeeping live
 in Linear, and who need an audit trail because someone eventually asks "who
-closed those twelve tickets?"
+closed those tickets?"
 
 ## Setup (about two minutes)
 
 1. Generate a key at **Linear → Settings → API**.
 2. Run `railcall studio`, open the **Sends** tab, choose **Linear — API key +
-   team**, and save both `api_key` and `team_id` (the form requires both; the
-   team UUID is in your team settings URL). There is no CLI equivalent.
+   team**, and save both `api_key` and `team_id` (the team UUID is in your team
+   settings URL). There is no CLI equivalent.
 3. Run `linear.list_teams` to confirm it works. The saved team is the default
    for every team-scoped command, so most calls never repeat the UUID.
 
-The key is read at call time from the vault. The published bundle contains no
-credential environment read at all — the build strips them, since it only runs
-inside the Studio. The key is never written to disk, logged, or put in a cache key.
+The key is read at call time from the vault. The published bundle reads no
+environment variable at all — the build strips the standalone credential
+fallback and the Redis cache config, since it only ever runs inside the Studio.
+The key is never written to disk, logged, or put in a cache key.
 
 ## Scope
 
@@ -65,14 +66,14 @@ run immediately; 27 writes are gated by the Airlock.
 - **`create_webhook` needs a scope** — one of `team_id` or `all_public_teams`.
 - **API key auth only.** No OAuth2 in this release.
 - **Caching covers metadata only** (teams, projects, users, states, labels),
-  5-minute TTL. Issue and comment reads are never cached.
+  5-minute TTL, in memory. Issue and comment reads are never cached.
 - **Mutations are never auto-retried.** Linear has no idempotency key, so a retry
   after an accepted write would duplicate it. Recovery is a fresh approval.
 
 ## Verification
 
-240 unit tests and 56 live tests against a real Linear workspace; all 45
-commands exercised end-to-end. Full source, architecture notes and the bundle
-build tool: <https://github.com/faizalmy/railcall-linear-module>
+251 unit tests and 56 live tests against a real Linear workspace; all 45
+commands exercised end-to-end. Source, architecture notes, bundle build tool and
+CI: <https://github.com/faizalmy/railcall-linear-module>
 
 MIT licensed.

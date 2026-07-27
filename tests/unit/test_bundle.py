@@ -503,6 +503,29 @@ class TestAuthBlock:
         assert manifest["repository"].startswith("https://github.com/")
 
 
+class TestStoreCardLinks:
+    """`homepage` and `tests_url` render as badges on the marketplace card.
+
+    They are structured fields rather than URLs buried in the description prose,
+    which is what makes the store render them automatically.
+    """
+
+    def test_homepage_is_published(self, manifest):
+        assert manifest["homepage"].startswith("https://")
+
+    def test_tests_url_is_published(self, manifest):
+        assert manifest["tests_url"].startswith("https://")
+
+    def test_tests_url_points_at_the_ci_workflow(self, manifest):
+        """The badge should link to evidence tests run, not just to the folder."""
+        assert "/actions/workflows/" in manifest["tests_url"]
+
+    def test_links_survive_into_the_signed_manifest(self, manifest):
+        """canonical() is what gets signed and shipped - the fields must be in it."""
+        signed = json.loads(build_bundle.canonical(manifest))
+        assert signed["homepage"] and signed["tests_url"]
+
+
 class TestMutationSafetyReachesTheBundle:
     """The retry rule must survive flattening, not just exist in the package."""
 
@@ -573,11 +596,29 @@ class TestNoCredentialEnvironmentRead:
         for name in self.CREDENTIAL_NAMES:
             assert name not in minified, f"{name} leaked into the minified bundle"
 
-    def test_only_redis_config_reads_environment(self, handler_text):
-        """Cache config may come from env; credentials may not."""
-        names = set(re.findall(r"os\.environ\.get\(['\"]([A-Z_]+)", handler_text))
-        assert names <= {"REDIS_URL", "REDIS_HOST", "REDIS_PORT", "REDIS_DB",
-                         "REDIS_PASSWORD"}, f"unexpected env reads: {names}"
+    def test_bundle_reads_no_environment_variable_at_all(self, handler_text):
+        """Not just credentials: the shipped file must call os.environ zero times.
+
+        The Redis cache config used to read REDIS_URL/HOST/PORT/DB/PASSWORD
+        here. It was unreachable inside the Studio - no `redis` package in the
+        exec namespace - but an auditor grepping the bundle cannot tell an
+        unreachable env read from a live one, and the listing claims there are
+        none. build_bundle.strip_redis() makes the claim literally true.
+        """
+        reads = [
+            node for node in ast.walk(ast.parse(handler_text))
+            if isinstance(node, ast.Attribute)
+            and node.attr == "environ"
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "os"
+        ]
+        assert not reads, f"{len(reads)} environment read(s) in the bundle"
+
+    def test_no_environment_read_survives_minification(self, manifest):
+        minified = build_bundle.minify(
+            build_bundle.flatten_sources() + build_bundle.build_adapters(manifest)
+        )
+        assert "os.environ" not in minified
 
     def test_standalone_sources_return_constants(self, handler_text):
         namespace = {
@@ -613,6 +654,57 @@ class TestNoCredentialEnvironmentRead:
         """A silent miss here would ship a credential env read."""
         with pytest.raises(SystemExit, match="_standalone_api_key"):
             build_bundle.neutralize_standalone("def unrelated():\n    return 1\n")
+
+
+class TestRedisIsStrippedFromTheBundle:
+    """Redis exists for standalone runs; the published artifact must not carry it.
+
+    Inside the Studio the backend is unreachable anyway, so removing it costs
+    nothing at runtime and buys two things: the bundle performs no environment
+    read, and ~1.4 KB comes back against the 100 KiB publish limit.
+    """
+
+    def test_redis_class_is_absent(self, handler_text):
+        classes = {
+            node.name for node in ast.walk(ast.parse(handler_text))
+            if isinstance(node, ast.ClassDef)
+        }
+        assert "RedisCache" not in classes
+        assert "MemoryCache" in classes, "the surviving backend went missing too"
+
+    def test_cache_falls_back_to_memory(self, handler_text):
+        namespace = _exec_bundle(handler_text)
+        manager = namespace["CacheManager"]()
+        assert type(manager._backend).__name__ == "MemoryCache"
+
+    def test_the_cache_still_works(self, handler_text):
+        """Stripping a backend must not break the one that remains."""
+        namespace = _exec_bundle(handler_text)
+        manager = namespace["CacheManager"]()
+        manager.set("k", {"v": 1}, ttl=60)
+        assert manager.get("k") == {"v": 1}
+
+    def test_asking_for_redis_explicitly_says_why_it_is_gone(self, handler_text):
+        namespace = _exec_bundle(handler_text)
+        with pytest.raises(RuntimeError, match="Redis is unavailable"):
+            namespace["CacheManager"]("redis")
+
+    def test_nothing_still_references_the_removed_class(self, handler_text):
+        """`-> RedisCache` is evaluated at def time; leaving it would NameError.
+
+        Comments and docstrings may still explain the removal - only executable
+        references matter here.
+        """
+        referenced = {
+            node.id for node in ast.walk(ast.parse(handler_text))
+            if isinstance(node, ast.Name)
+        }
+        assert "RedisCache" not in referenced
+
+    def test_build_fails_loudly_if_the_backend_is_renamed(self):
+        """A silent miss would ship the REDIS_PASSWORD read back into the bundle."""
+        with pytest.raises(SystemExit, match="RedisCache"):
+            build_bundle.strip_redis("class Unrelated:\n    pass\n")
 
 
 class TestNoDeprecatedLinearFields:

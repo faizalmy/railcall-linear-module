@@ -13,7 +13,10 @@ Every environment read lives in a `_standalone_*` function below, and nothing
 else in this module touches `os.environ`. `tools/build_bundle.py` replaces
 those bodies with `return None` when generating the published bundle, because
 that artifact only ever runs inside the Studio - so the shipped code contains
-no credential environment read at all, not merely an unreachable one.
+no credential environment read at all, not merely an unreachable one. The same
+build also strips the Redis cache backend (`cache.py`), which is the only other
+environment read in the package: the published bundle has zero `os.environ`
+calls, and `tests/unit/test_bundle.py` asserts it.
 
 Everything funnels through `resolve_api_key()` so neither the GraphQL client
 nor the cache has to know which one it got.

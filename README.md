@@ -6,8 +6,9 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-240%20unit%20%2B%2056%20live-brightgreen.svg)](./tests/)
-[![Coverage](https://img.shields.io/badge/coverage-77%25-yellowgreen.svg)](./tests/)
+[![Tests](https://img.shields.io/badge/tests-251%20unit%20%2B%2056%20live-brightgreen.svg)](./tests/)
+[![Coverage](https://img.shields.io/badge/coverage-78%25-yellowgreen.svg)](./tests/)
+[![CI](https://github.com/faizalmy/railcall-linear-module/actions/workflows/ci.yml/badge.svg)](https://github.com/faizalmy/railcall-linear-module/actions/workflows/ci.yml)
 
 *Comprehensive Linear integration with automatic retry, rate limiting, caching, and enterprise-grade error handling*
 
@@ -137,8 +138,8 @@ python3 tools/build_bundle.py --install
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `LINEAR_API_KEY` | Standalone only | Library use and the test suite only. **The published bundle contains no credential environment read at all** — the build replaces those with constants, since the bundle only ever runs inside the Studio. |
-| `REDIS_URL` | ❌ No | Redis connection URL (defaults to in-memory cache) |
+| `LINEAR_API_KEY` | Standalone only | Library use and the test suite only. **The published bundle reads no environment variable at all** — the build replaces the standalone credential sources with constants, since the bundle only ever runs inside the Studio. |
+| `REDIS_URL` | ❌ No | Redis connection URL (defaults to in-memory cache). Standalone only: the Redis backend is **stripped from the published bundle**, which always caches in memory. |
 
 > **Inside the Studio the module never reads the process environment.** Env vars
 > are visible via `ps auxe` and land in core dumps, so a vault bypass would
@@ -228,13 +229,15 @@ Saving writes `keys.local.json` (owner-only) and marks the provider configured,
 which flips the commands from `not_configured` to runnable.
 
 That vault entry is the only credential source inside the Studio; the published
-bundle contains no credential environment read at all. Outside the Studio —
+bundle reads no environment variable at all — `tools/build_bundle.py` strips
+both the standalone credential fallback and the Redis cache config, and
+`tests/unit/test_bundle.py` fails the build if either comes back. Outside the Studio —
 library use and the test suite — `LINEAR_API_KEY` is used instead, because
 there is no vault to read.
 
 ### Read commands
 
-16 of the 45 commands are read-only and execute without approval. Start with
+18 of the 45 commands are read-only and execute without approval. Start with
 `linear.list_teams` - every other command needs a team UUID:
 
 ```json
@@ -379,7 +382,10 @@ Statuses: `Proposed`, `Planned`, `Active`, `Completed`, `Canceled`.
 
 ### Caching
 
-The module supports both Redis and in-memory caching:
+The module supports both Redis and in-memory caching. **Redis is for standalone
+and self-hosted use only** — the published bundle ships without it, so a module
+installed from the marketplace always caches in memory and reads no environment
+variable:
 
 ```bash
 # Use Redis (recommended for production)
@@ -481,7 +487,7 @@ railcall-linear-module/
 │       ├── errors.py        # Error handling utilities
 │       ├── validation.py    # Input validation
 │       └── pagination.py    # Pagination utilities
-├── tests/                   # 240 unit + 56 live (package + generated bundle)
+├── tests/                   # 251 unit + 56 live (package + generated bundle)
 ├── docs/                    # Documentation
 └── .github/workflows/       # CI/CD pipeline
 ```
@@ -697,7 +703,7 @@ This module is submitted to the **RailCall Community Contest 2026 Q3**.
 |--------|--------|
 | Version | 0.2.7 |
 | Commands | 30 |
-| Test Coverage | 240 unit (77% lines) + 56 live against a real Linear workspace |
+| Test Coverage | 251 unit (78% lines) + 56 live against a real Linear workspace |
 | Python Support | 3.9+ |
 | License | MIT |
 | Production Ready | ✅ Yes |
