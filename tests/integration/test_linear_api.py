@@ -51,14 +51,35 @@ TEST_PREFIX = "[RailCall Test]"
 # attach to them - so they are torn down at session end instead of inline.
 _CREATED_PROJECTS = []
 
+# Same for issues: TestIssueManagement creates in test_02/test_03 and reads them
+# back in test_04 through test_08, so they cannot be deleted inline. Tracking
+# the ids here is what lets the session leave the workspace as it found it.
+_CREATED_ISSUES = []
+
+
+def _track_issue(issue):
+    """Register an issue for session teardown and hand it back."""
+    _CREATED_ISSUES.append(issue["id"])
+    return issue
+
 # Linear enforces uniqueness on label names and rejects overlapping cycles, so a
 # re-run must not reuse the previous run's names.
 RUN_ID = datetime.now().strftime("%m%d-%H%M%S")
 
 
 class TestIssueManagement:
-    """Integration tests for issue operations - creates visible test data."""
-    
+    """Integration tests for issue operations.
+
+    test_02 and test_03 create the issues the rest of the group reads back. They
+    are handed down as class attributes rather than re-found by scanning
+    list_issues: the scan matched on title, so it could pick up an issue from an
+    earlier run - or miss its own once the workspace held enough data to push it
+    out of the result window. Everything created here is deleted at session end.
+    """
+
+    integration_issue = None
+    bulk_issue_ids = []
+
     def test_01_list_issues(self):
         """Should list issues from Linear workspace."""
         result = list_issues(limit=10)
@@ -81,48 +102,53 @@ class TestIssueManagement:
         
         assert "issue" in result
         assert result["issue"]["title"] == f"{TEST_PREFIX} Integration Test Issue"
+        TestIssueManagement.integration_issue = _track_issue(result["issue"])
         print(f"✓ Created issue: {result['issue']['identifier']}")
-    
+
     def test_03_create_multiple_issues_for_bulk_test(self):
         """Should create multiple issues for bulk operations testing."""
         teams = list_teams()
         team_id = teams["teams"][0]["id"]
-        
+
         created_issues = []
         for i in range(1, 4):
             result = create_issue(
                 team_id=team_id,
-                title=f"{TEST_PREFIX} Bulk Test Issue #{i}",
+                title=f"{TEST_PREFIX} Bulk Test Issue #{i} {RUN_ID}",
                 description=f"This is test issue #{i} for bulk operations.",
                 priority=3  # Medium
             )
-            created_issues.append(result["issue"]["id"])
-        
+            created_issues.append(_track_issue(result["issue"])["id"])
+
         assert len(created_issues) == 3
+        TestIssueManagement.bulk_issue_ids = created_issues
         print("✓ Created 3 issues for bulk testing")
-    
+
     def test_04_search_issues(self):
-        """Should search for test issues."""
-        result = search_issues(query="RailCall Test", limit=10)
-        assert "issues" in result
-        assert len(result["issues"]) > 0
+        """Should find the issues test_02 and test_03 just created.
+
+        Linear's search index is eventually consistent, so a freshly created
+        issue is not immediately findable. The poll waits for the index rather
+        than asserting against whatever an earlier run happened to leave behind.
+        """
+        deadline = time.time() + 60
+        while True:
+            result = search_issues(query="RailCall Test", limit=25)
+            assert "issues" in result
+            if result["issues"] or time.time() > deadline:
+                break
+            time.sleep(3)
+
+        assert len(result["issues"]) > 0, "search index did not catch up within 60s"
         print(f"✓ Found {len(result['issues'])} test issues via search")
-    
+
     def test_05_bulk_update_issues(self):
-        """Should bulk update test issues."""
-        # Get issues created in previous tests
-        issues = list_issues(limit=50)
-        test_issue_ids = [
-            issue["id"] for issue in issues["issues"]
-            if issue["title"].startswith(TEST_PREFIX) and "Bulk Test" in issue["title"]
-        ]
-        
-        assert len(test_issue_ids) >= 3, (
-            f"expected >=3 bulk-test issues from test_03, found {len(test_issue_ids)}"
-        )
-        
-        result = bulk_update_issues(issue_ids=test_issue_ids[:3], priority=1)
-        
+        """Should bulk update the three issues test_03 created."""
+        test_issue_ids = TestIssueManagement.bulk_issue_ids
+        assert len(test_issue_ids) == 3, "test_03 did not hand down three issues"
+
+        result = bulk_update_issues(issue_ids=test_issue_ids, priority=1)
+
         assert result["success_count"] == 3
         assert result["failure_count"] == 0
         assert result["rate_limited"] is False
@@ -185,31 +211,19 @@ class TestIssueManagement:
     
     def test_07_get_issue_details(self):
         """Should retrieve detailed issue information."""
-        issues = list_issues(limit=10)
-        test_issue = next(
-            (issue for issue in issues["issues"] 
-             if issue["title"].startswith(TEST_PREFIX)),
-            None
-        )
-        
-        assert test_issue is not None, "no test issue found from the earlier tests"
-        
+        test_issue = TestIssueManagement.integration_issue
+        assert test_issue is not None, "issue created by test_02 not handed down"
+
         result = get_issue(issue_id=test_issue["id"])
         assert result["issue"]["id"] == test_issue["id"]
         assert result["issue"]["title"] == test_issue["title"]
         print(f"✓ Retrieved issue details: {result['issue']['identifier']}")
-    
+
     def test_08_update_issue(self):
         """Should update a test issue."""
-        issues = list_issues(limit=250)
-        test_issue = next(
-            (issue for issue in issues["issues"]
-             if issue["title"] == f"{TEST_PREFIX} Integration Test Issue"),
-            None
-        )
-        
-        assert test_issue is not None, "issue created by test_02 not found"
-        
+        test_issue = TestIssueManagement.integration_issue
+        assert test_issue is not None, "issue created by test_02 not handed down"
+
         result = update_issue(
             issue_id=test_issue["id"],
             title=f"{TEST_PREFIX} Integration Test Issue (Updated)",
@@ -938,8 +952,19 @@ class TestArchiveAndSearch:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _teardown_projects():
-    """Delete projects this session created, once everything that uses them is done."""
+def _teardown_created_objects():
+    """Remove what this session created, once everything that uses it is done.
+
+    Issues and projects are read back by tests other than the one that created
+    them, so neither can be deleted inline. Running the suite must not grow the
+    workspace: leftovers made assertions pass against stale data, and workflow
+    statuses are quota-limited outright.
+    """
     yield
+    for issue_id in _CREATED_ISSUES:
+        try:
+            delete_issue(issue_id=issue_id)
+        except Exception:
+            pass
     for project_id in _CREATED_PROJECTS:
         _delete_project(project_id)
