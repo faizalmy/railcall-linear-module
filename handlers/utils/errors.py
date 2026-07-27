@@ -72,7 +72,7 @@ def handle_graphql_errors(response: Dict[str, Any]) -> None:
     if code == "AUTHENTICATION_ERROR":
         raise AuthenticationError(
             "Invalid or revoked Linear API key. Generate a new one at "
-            "Linear > Settings > API and update LINEAR_API_KEY.",
+            "Linear > Settings > API and update the saved credential.",
             code=code,
             details=extensions
         )

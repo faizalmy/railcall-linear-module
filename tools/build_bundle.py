@@ -150,6 +150,44 @@ def minify(text):
     return MINIFIED_HEADER + ast.unparse(ast.fix_missing_locations(tree)) + "\n"
 
 
+# The published bundle only ever runs inside the Studio, where the vault is the
+# sole credential source. These functions are the ONLY place the package reads a
+# credential from the environment; their bodies are replaced here so the shipped
+# artifact contains no credential environment read at all - not an unreachable
+# one, none. A reviewer grepping the bundle finds nothing to question, and a
+# future edit that leaks an os.environ read outside them fails the bundle tests.
+NEUTRALIZE = {
+    "_standalone_api_key": None,
+    "_standalone_team_id": None,
+    "standalone_credential_hint": "",
+    "standalone_invalid_hint": "",
+}
+
+
+def neutralize_standalone(text):
+    """Replace each standalone credential source with a constant."""
+    tree = ast.parse(text)
+    replaced = set()
+
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef) or node.name not in NEUTRALIZE:
+            continue
+        value = NEUTRALIZE[node.name]
+        node.body = [ast.Return(value=ast.Constant(value=value))]
+        replaced.add(node.name)
+
+    missing = set(NEUTRALIZE) - replaced
+    if missing:
+        raise SystemExit(
+            "build_bundle: expected to neutralize " + ", ".join(sorted(missing))
+            + " but they were not found as top-level functions. If they were "
+            "renamed, update NEUTRALIZE - otherwise the bundle would ship a "
+            "credential environment read."
+        )
+
+    return ast.unparse(ast.fix_missing_locations(tree)) + "\n"
+
+
 def read_source(rel_path):
     with open(os.path.join(REPO_ROOT, rel_path), "r", encoding="utf-8") as handle:
         return handle.read()
@@ -161,11 +199,13 @@ def strip_relative_imports(text):
 
 
 def flatten_sources():
-    """Concatenate the package into one module body."""
+    """Concatenate the package into one module body, Studio-only."""
     chunks = [BUNDLE_HEADER]
 
     for rel_path in SOURCE_FILES:
         body = strip_relative_imports(read_source(rel_path))
+        if rel_path == "handlers/credentials.py":
+            body = neutralize_standalone(body)
         chunks.append(
             f"\n# {'=' * 70}\n# source: {rel_path}\n# {'=' * 70}\n\n{body.strip()}\n"
         )

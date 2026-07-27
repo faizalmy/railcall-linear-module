@@ -15,7 +15,12 @@ import urllib.error
 import urllib.request
 from typing import Any, Dict, Optional
 
-from .credentials import in_studio, resolve_api_key
+from .credentials import (
+    in_studio,
+    resolve_api_key,
+    standalone_credential_hint,
+    standalone_invalid_hint,
+)
 from .utils.errors import (
     LinearError,
     AuthenticationError,
@@ -55,7 +60,8 @@ class LinearClient:
         """Initialize Linear client.
         
         Args:
-            api_key: Linear API key. If not provided, reads from LINEAR_API_KEY env var.
+            api_key: Linear API key. If omitted, resolved from the station
+                vault inside the Studio, or the environment when standalone.
         """
         self.api_key = api_key or resolve_api_key()
         if not self.api_key:
@@ -68,7 +74,7 @@ class LinearClient:
                     "Get the key from Linear → Settings → API → Create key."
                 )
             raise AuthenticationError(
-                "No Linear API key. Set LINEAR_API_KEY in the environment. "
+                f"No Linear API key. {standalone_credential_hint()} "
                 "Get your key from Linear → Settings → API → Create key."
             )
 
@@ -188,7 +194,7 @@ class LinearClient:
                             "'linear' provider. Replace it in Studio → Sends → Configure."
                         )
                     raise AuthenticationError(
-                        "Invalid Linear API key. Check LINEAR_API_KEY in the environment."
+                        f"Invalid Linear API key. {standalone_invalid_hint()}"
                     )
 
                 if response.status_code == 429:

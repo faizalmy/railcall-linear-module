@@ -13,6 +13,7 @@ rejects the module if it is wrong:
 import ast
 import json
 import os
+import re
 import sys
 
 import pytest
@@ -531,3 +532,68 @@ class TestMutationSafetyReachesTheBundle:
                 assert client_cls.is_mutation(document) is False, name
             else:
                 pytest.fail(f"{name} is neither a query nor a mutation")
+
+
+class TestNoCredentialEnvironmentRead:
+    """The published bundle must contain no credential environment read at all.
+
+    Not an unreachable one - none. The bundle only ever runs inside the Studio,
+    where the vault is the sole source, so build_bundle.neutralize_standalone()
+    replaces every `_standalone_*` body with a constant. A reviewer grepping the
+    shipped handler finds nothing that looks like environment-based auth, which
+    is exactly how the original vault-bypass finding was made.
+    """
+
+    CREDENTIAL_NAMES = ("LINEAR_API_KEY", "LINEAR_TEAM_ID")
+
+    def test_no_credential_variable_names_in_the_bundle(self, handler_text):
+        for name in self.CREDENTIAL_NAMES:
+            assert name not in handler_text, f"{name} leaked into the bundle"
+
+    def test_no_credential_names_survive_minification(self, manifest):
+        minified = build_bundle.minify(
+            build_bundle.flatten_sources() + build_bundle.build_adapters(manifest)
+        )
+        for name in self.CREDENTIAL_NAMES:
+            assert name not in minified, f"{name} leaked into the minified bundle"
+
+    def test_only_redis_config_reads_environment(self, handler_text):
+        """Cache config may come from env; credentials may not."""
+        names = set(re.findall(r"os\.environ\.get\(['\"]([A-Z_]+)", handler_text))
+        assert names <= {"REDIS_URL", "REDIS_HOST", "REDIS_PORT", "REDIS_DB",
+                         "REDIS_PASSWORD"}, f"unexpected env reads: {names}"
+
+    def test_standalone_sources_return_constants(self, handler_text):
+        namespace = {
+            "__name__": "railcall_module_test",
+            "__file__": "handler.py",
+            "__rc_helpers__": {},
+            "os": os,
+            "json": json,
+            "time": __import__("time"),
+        }
+        exec(compile(handler_text, "handler.py", "exec"), namespace)
+
+        assert namespace["_standalone_api_key"]() is None
+        assert namespace["_standalone_team_id"]() is None
+        assert namespace["standalone_credential_hint"]() == ""
+
+    def test_bundle_without_a_vault_yields_no_key(self, handler_text):
+        """With helpers absent the env path is gone, so nothing resolves."""
+        namespace = {
+            "__name__": "railcall_module_test",
+            "__file__": "handler.py",
+            "__rc_helpers__": {},
+            "os": os,
+            "json": json,
+            "time": __import__("time"),
+        }
+        exec(compile(handler_text, "handler.py", "exec"), namespace)
+
+        with patch.dict(os.environ, {"LINEAR_API_KEY": "should_be_ignored"}):
+            assert namespace["resolve_api_key"]() is None
+
+    def test_build_fails_loudly_if_a_target_is_renamed(self):
+        """A silent miss here would ship a credential env read."""
+        with pytest.raises(SystemExit, match="_standalone_api_key"):
+            build_bundle.neutralize_standalone("def unrelated():\n    return 1\n")

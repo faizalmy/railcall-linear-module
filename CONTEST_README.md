@@ -44,8 +44,9 @@ closed those twelve tickets?"
    `LINEAR_API_KEY` applies to standalone/library use only.
 3. Run `linear.list_teams` — every other command needs a team UUID.
 
-The key is read at call time from the vault, never from process environment
-inside the Studio. It is never written to disk, logged, or placed in a cache key.
+The key is read at call time from the vault. The published bundle contains no
+credential environment read at all — the build strips them, since it only runs
+inside the Studio. The key is never written to disk, logged, or put in a cache key.
 
 ## Scope
 
@@ -70,7 +71,7 @@ writes are `write_requires_approval` and gated by the Airlock.
 
 ## Verification
 
-199 unit tests and 47 live tests against a real Linear workspace; all 36
+208 unit tests and 47 live tests against a real Linear workspace; all 36
 commands exercised end-to-end. Full source, architecture notes and the bundle
 build tool: <https://github.com/faizalmy/railcall-linear-module>
 

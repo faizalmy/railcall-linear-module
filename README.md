@@ -6,7 +6,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-199%20unit%20%2B%2047%20live-brightgreen.svg)](./tests/)
+[![Tests](https://img.shields.io/badge/tests-208%20unit%20%2B%2047%20live-brightgreen.svg)](./tests/)
 [![Coverage](https://img.shields.io/badge/coverage-77%25-yellowgreen.svg)](./tests/)
 
 *Comprehensive Linear integration with automatic retry, rate limiting, caching, and enterprise-grade error handling*
@@ -135,7 +135,7 @@ python3 tools/build_bundle.py --install
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `LINEAR_API_KEY` | Standalone only | Read **only** outside the Studio (library use, tests). Inside the Studio the station vault is the sole source. |
+| `LINEAR_API_KEY` | Standalone only | Library use and the test suite only. **The published bundle contains no credential environment read at all** — the build replaces those with constants, since the bundle only ever runs inside the Studio. |
 | `REDIS_URL` | ❌ No | Redis connection URL (defaults to in-memory cache) |
 
 > **Inside the Studio the module never reads the process environment.** Env vars
@@ -642,7 +642,7 @@ This module is submitted to the **RailCall Community Contest 2026 Q3**.
 
 | Metric | Status |
 |--------|--------|
-| Version | 0.2.1 |
+| Version | 0.2.2 |
 | Commands | 30 |
 | Test Coverage | 171 unit (75% lines) + 46 live against a real Linear workspace |
 | Python Support | 3.9+ |
