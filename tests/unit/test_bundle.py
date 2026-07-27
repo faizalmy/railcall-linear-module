@@ -525,6 +525,28 @@ class TestStoreCardLinks:
         signed = json.loads(build_bundle.canonical(manifest))
         assert signed["homepage"] and signed["tests_url"]
 
+    def test_video_url_is_emitted_only_when_set(self):
+        """An empty string would render as a dead embed on the store card."""
+        base = {
+            "id": "x/y", "version": "0", "name": "n", "description": "d",
+            "author": "a", "license": "MIT", "publisher_pubkey": "00",
+            "auth": {}, "commands": [],
+        }
+        assert "video_url" not in build_bundle.build_manifest(dict(base))
+        assert "video_url" not in build_bundle.build_manifest(dict(base, video_url=""))
+
+        with_video = build_bundle.build_manifest(
+            dict(base, video_url="https://youtu.be/abc123")
+        )
+        assert with_video["video_url"] == "https://youtu.be/abc123"
+
+    def test_a_declared_video_url_is_a_real_url(self, source_manifest):
+        """Placeholder text would ship as a broken embed."""
+        video = source_manifest.get("video_url")
+        if video:
+            assert video.startswith("https://"), video
+            assert "YOUR_ID" not in video, "placeholder left in module.json"
+
 
 class TestMutationSafetyReachesTheBundle:
     """The retry rule must survive flattening, not just exist in the package."""

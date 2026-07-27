@@ -457,6 +457,9 @@ def build_manifest(source):
         # that automatic.
         "homepage": source.get("homepage"),
         "tests_url": source.get("tests_url"),
+        # Optional: a demo walkthrough the store renders as an embed. Emitted
+        # only when set, because an empty string would render as a dead player.
+        **({"video_url": source["video_url"]} if source.get("video_url") else {}),
         "provider": PROVIDER,
         "publisher_pubkey": source["publisher_pubkey"],
         "license_required": False,
