@@ -1,7 +1,7 @@
 # Architecture Document: RailCall Linear Module (Production)
 
-**Version:** 0.2.2  
-**Status:** Planning — this document describes the target design, not all of which ships in 0.2.2  
+**Version:** 0.2.3  
+**Status:** Planning — this document describes the target design, not all of which ships in 0.2.3  
 **Author:** AgentStack Labs  
 **Date:** 2026-07-26  
 **Contest:** RailCall Community Contest 2026 Q3 — Track A (Best Module)
@@ -10,9 +10,9 @@
 
 ## 0. Implementation Status
 
-What this document describes versus what version 0.2.2 actually ships:
+What this document describes versus what version 0.2.3 actually ships:
 
-| Area | Designed here | Shipped in 0.2.2 |
+| Area | Designed here | Shipped in 0.2.3 |
 |------|---------------|------------------|
 | 36 commands | ✅ | ✅ |
 | Signed module bundle the Studio loader accepts | ✅ | ✅ — built by `tools/build_bundle.py`, Ed25519-signed, all 36 commands register |
@@ -1094,7 +1094,7 @@ railcall market install agentstack-labs/linear
 // module.json
 {
   "slug": "agentstack-labs/linear",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "changelog": "https://github.com/faizalmy/railcall-linear-module/blob/main/CHANGELOG.md"
 }
 ```

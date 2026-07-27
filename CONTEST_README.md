@@ -39,10 +39,11 @@ closed those twelve tickets?"
 ## Setup (about two minutes)
 
 1. Generate a key at **Linear → Settings → API**.
-2. In **Studio → Sends → Configure**, save it under the `linear` provider as
-   `api_key`. That vault entry is the only credential source inside the Studio;
-   `LINEAR_API_KEY` applies to standalone/library use only.
-3. Run `linear.list_teams` — every other command needs a team UUID.
+2. Run `railcall studio`, open the **Sends** tab, choose **Linear — API key +
+   team**, and save both `api_key` and `team_id` (the form requires both; the
+   team UUID is in your team settings URL). There is no CLI equivalent.
+3. Run `linear.list_teams` to confirm it works. The saved team is the default
+   for every team-scoped command, so most calls never repeat the UUID.
 
 The key is read at call time from the vault. The published bundle contains no
 credential environment read at all — the build strips them, since it only runs
@@ -56,8 +57,8 @@ writes are `write_requires_approval` and gated by the Airlock.
 
 ## Known limitations
 
-- **UUIDs only.** No command accepts `ENG-123` or a team name. Start with
-  `linear.list_teams` and carry the ids.
+- **UUIDs only** for issues, states and labels. No command accepts `ENG-123`.
+  The team UUID is the exception — it defaults to the one saved with the key.
 - **`search_issues` matches titles only** — not descriptions or comments.
 - **Milestones are project-scoped.** `create_milestone` requires a `project_id`;
   Linear has no workspace-level milestone.
@@ -71,7 +72,7 @@ writes are `write_requires_approval` and gated by the Airlock.
 
 ## Verification
 
-208 unit tests and 47 live tests against a real Linear workspace; all 36
+214 unit tests and 49 live tests against a real Linear workspace; all 36
 commands exercised end-to-end. Full source, architecture notes and the bundle
 build tool: <https://github.com/faizalmy/railcall-linear-module>
 

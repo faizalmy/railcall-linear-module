@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional
 
 from .client import execute_query
 from .cache import cached, invalidate_all
+from .credentials import resolve_default_team_id
 from .queries import (
     LIST_ISSUES,
     GET_ISSUE,
@@ -93,6 +94,29 @@ METADATA_TTL = 300
 def _run_query(query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
     """Adapter matching paginate_query's query_func signature."""
     return execute_query(query, variables)
+
+
+def _team_id_or_default(team_id: Optional[str]) -> str:
+    """The caller's team, or the one saved alongside the credential.
+
+    The Studio's credential form requires a team UUID next to the API key, so
+    every configured install has one. Using it as the default means the common
+    single-team case does not have to paste the same UUID into every command -
+    which was the sharpest usability edge here, since nothing accepts a team
+    key like ENG.
+
+    Raises:
+        ValueError: if no team was passed and none is saved.
+    """
+    resolved = team_id or resolve_default_team_id()
+    if not resolved:
+        raise ValueError(
+            "No team_id given and none saved with the credential. Pass team_id, "
+            "or save a default team in Studio → Sends → Linear."
+        )
+
+    validate_team_id(resolved)
+    return resolved
 
 
 # ============================================================================
@@ -168,8 +192,8 @@ def get_issue(issue_id: str, context: Optional[Dict[str, Any]] = None) -> Dict[s
 
 
 def create_issue(
-    team_id: str,
     title: str,
+    team_id: Optional[str] = None,
     description: Optional[str] = None,
     priority: Optional[int] = None,
     assignee_id: Optional[str] = None,
@@ -181,8 +205,8 @@ def create_issue(
     """Create a new issue.
     
     Args:
-        team_id: Team ID (required)
         title: Issue title (required)
+        team_id: Team ID. Defaults to the team saved with the credential.
         description: Issue description (markdown)
         priority: Priority (0=none, 1=urgent, 2=high, 3=medium, 4=low)
         assignee_id: Assignee user ID
@@ -194,7 +218,7 @@ def create_issue(
     Returns:
         Dict with created issue
     """
-    validate_team_id(team_id)
+    team_id = _team_id_or_default(team_id)
     validate_non_empty(title, "title")
     if priority is not None:
         validate_priority(priority)
@@ -543,17 +567,20 @@ def list_teams(limit: int = 50, context: Optional[Dict[str, Any]] = None) -> Dic
 
 
 @cached(ttl=METADATA_TTL)
-def get_team(team_id: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def get_team(
+    team_id: Optional[str] = None,
+    context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """Get detailed information about a specific team.
     
     Args:
-        team_id: Team ID
+        team_id: Team ID. Defaults to the team saved with the credential.
         context: RailCall context (unused)
     
     Returns:
         Dict with team details
     """
-    validate_team_id(team_id)
+    team_id = _team_id_or_default(team_id)
     
     result = execute_query(GET_TEAM, {"id": team_id})
     
@@ -774,18 +801,18 @@ def list_states(
 
 
 def create_state(
-    team_id: str,
     name: str,
     color: str,
+    team_id: Optional[str] = None,
     state_type: str = "backlog",
     context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Create a new workflow state.
     
     Args:
-        team_id: Team ID (required)
         name: State name (required)
         color: Color hex code (required)
+        team_id: Team ID. Defaults to the team saved with the credential.
         state_type: State type (backlog, unstarted, started, completed, canceled).
             Linear does not accept 'triage' here - triage is a per-team singleton
             enabled in team settings, not a state you create.
@@ -794,7 +821,7 @@ def create_state(
     Returns:
         Dict with created state
     """
-    validate_team_id(team_id)
+    team_id = _team_id_or_default(team_id)
     validate_non_empty(name, "name")
     validate_color(color)
 
@@ -905,25 +932,25 @@ def list_labels(
 
 
 def create_label(
-    team_id: str,
     name: str,
     color: str,
+    team_id: Optional[str] = None,
     description: Optional[str] = None,
     context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Create a new issue label.
     
     Args:
-        team_id: Team ID (required)
         name: Label name (required)
         color: Color hex code (required)
+        team_id: Team ID. Defaults to the team saved with the credential.
         description: Label description
         context: RailCall context (unused)
     
     Returns:
         Dict with created label
     """
-    validate_team_id(team_id)
+    team_id = _team_id_or_default(team_id)
     validate_non_empty(name, "name")
     validate_color(color)
 
@@ -997,21 +1024,21 @@ def update_label(
 # ============================================================================
 
 def list_cycles(
-    team_id: str,
+    team_id: Optional[str] = None,
     limit: int = 50,
     context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """List cycles for a team.
     
     Args:
-        team_id: Team ID (required)
+        team_id: Team ID. Defaults to the team saved with the credential.
         limit: Maximum number of results (default: 50)
         context: RailCall context (unused)
     
     Returns:
         Dict with cycles list
     """
-    validate_team_id(team_id)
+    team_id = _team_id_or_default(team_id)
     limit = validate_limit(limit, max_limit=250)
 
     cycles = paginate_query(
@@ -1049,25 +1076,25 @@ def get_cycle(cycle_id: str, context: Optional[Dict[str, Any]] = None) -> Dict[s
 
 
 def create_cycle(
-    team_id: str,
     starts_at: str,
     ends_at: str,
+    team_id: Optional[str] = None,
     name: Optional[str] = None,
     context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Create a new cycle.
     
     Args:
-        team_id: Team ID (required)
         starts_at: Start date (ISO 8601)
         ends_at: End date (ISO 8601)
+        team_id: Team ID. Defaults to the team saved with the credential.
         name: Cycle name
         context: RailCall context (unused)
     
     Returns:
         Dict with created cycle
     """
-    validate_team_id(team_id)
+    team_id = _team_id_or_default(team_id)
     validate_iso_date(starts_at, "starts_at")
     validate_iso_date(ends_at, "ends_at")
     if starts_at >= ends_at:

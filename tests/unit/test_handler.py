@@ -937,3 +937,88 @@ class TestCreateProject:
             }
         }
         assert list_projects()["count"] == 1
+
+
+class TestTeamIdDefault:
+    """The Studio's credential form requires a team UUID next to the API key.
+
+    Before this, that value was collected and never used - resolve_default_team_id()
+    was dead code - while six commands demanded team_id as an argument. Now the
+    saved team is the default, so the common single-team case does not paste the
+    same UUID into every call.
+    """
+
+    TEAM = "123e4567-e89b-12d3-a456-426614174000"
+    SAVED = "123e4567-e89b-12d3-a456-4266141749999"[:36]
+
+    def _vault(self, team_id):
+        from handlers import credentials
+        entry = {"api_key": "k"}
+        if team_id:
+            entry["team_id"] = team_id
+        return patch.dict(
+            credentials.__dict__,
+            {"__rc_helpers__": {"vault_get": lambda p: entry if p == "linear" else None}},
+        )
+
+    @patch('handlers.handler.execute_query')
+    def test_create_issue_uses_the_saved_team(self, mock_query):
+        mock_query.return_value = {
+            "issueCreate": {"success": True, "issue": {"id": "i-1", "title": "x"}}
+        }
+
+        with self._vault(self.TEAM):
+            create_issue(title="Fix login")
+
+        assert mock_query.call_args[0][1]["input"]["teamId"] == self.TEAM
+
+    @patch('handlers.handler.execute_query')
+    def test_an_explicit_team_wins_over_the_saved_one(self, mock_query):
+        explicit = "123e4567-e89b-12d3-a456-426614174001"
+        mock_query.return_value = {
+            "issueCreate": {"success": True, "issue": {"id": "i-1", "title": "x"}}
+        }
+
+        with self._vault(self.TEAM):
+            create_issue(title="Fix login", team_id=explicit)
+
+        assert mock_query.call_args[0][1]["input"]["teamId"] == explicit
+
+    @patch('handlers.handler.execute_query')
+    def test_no_team_anywhere_is_a_clear_error(self, mock_query):
+        with self._vault(None):
+            with pytest.raises(ValueError, match="No team_id given and none saved"):
+                create_issue(title="Fix login")
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_a_saved_team_is_still_validated(self, mock_query):
+        """A malformed vault value must not reach the API."""
+        with self._vault("not-a-uuid"):
+            with pytest.raises(ValidationError):
+                create_issue(title="Fix login")
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_every_team_scoped_command_accepts_the_default(self, mock_query):
+        """All six that used to demand team_id now work without it."""
+        responses = {
+            "get_team": {"team": {"id": self.TEAM, "name": "Eng"}},
+            "create_state": {"workflowStateCreate": {"success": True, "workflowState": {"id": "s"}}},
+            "create_label": {"issueLabelCreate": {"success": True, "issueLabel": {"id": "l"}}},
+            "list_cycles": {"cycles": {"nodes": [], "pageInfo": {"hasNextPage": False, "endCursor": None}}},
+            "create_cycle": {"cycleCreate": {"success": True, "cycle": {"id": "c"}}},
+        }
+        calls = [
+            ("get_team", get_team, {}),
+            ("create_state", create_state, {"name": "Todo", "color": "#FF0000"}),
+            ("create_label", create_label, {"name": "Bug", "color": "#FF0000"}),
+            ("list_cycles", list_cycles, {}),
+            ("create_cycle", create_cycle,
+             {"starts_at": "2026-01-01", "ends_at": "2026-01-14"}),
+        ]
+
+        for name, fn, kwargs in calls:
+            mock_query.return_value = responses[name]
+            with self._vault(self.TEAM):
+                fn(**kwargs)  # must not raise

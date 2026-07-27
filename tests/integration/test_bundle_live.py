@@ -212,3 +212,49 @@ class TestInstalledBundleMatchesSource:
             "installed bundle is stale - rebuild with: "
             "python3 tools/build_bundle.py --install"
         )
+
+
+class TestSavedTeamDefault:
+    """The team saved beside the credential is used when a command omits one.
+
+    The Studio's credential form requires a team UUID, so every configured
+    install has one. This exercises that path against the real API through the
+    generated bundle - the vault entry supplies the team, the caller does not.
+    """
+
+    def test_create_issue_without_a_team_id(self, bundle, team_id):
+        """A vault carrying team_id lets create_issue omit it entirely."""
+        namespace = bundle["ns"]
+        original = namespace["_rc_helpers"]().get("vault_get")
+
+        def vault_with_team(provider):
+            if provider != "linear":
+                return None
+            return {"api_key": os.environ["LINEAR_API_KEY"], "team_id": team_id}
+
+        namespace["__rc_helpers__"]["vault_get"] = vault_with_team
+        try:
+            created, _ = bundle["handlers"]["linear.create_issue"](
+                {"title": f"{TEST_PREFIX} Saved-team default"}, "stamp"
+            )
+            issue = created["issue"]
+            assert issue["team"]["id"] == team_id
+            print(f"✓ created {issue['identifier']} with no team_id argument")
+
+            bundle["handlers"]["linear.delete_issue"]({"issue_id": issue["id"]}, "stamp")
+        finally:
+            namespace["__rc_helpers__"]["vault_get"] = original
+
+    def test_missing_team_everywhere_is_a_clear_error(self, bundle):
+        """No argument and no saved team must say so, not fail obscurely."""
+        namespace = bundle["ns"]
+        original = namespace["_rc_helpers"]().get("vault_get")
+
+        namespace["__rc_helpers__"]["vault_get"] = lambda p: (
+            {"api_key": os.environ["LINEAR_API_KEY"]} if p == "linear" else None
+        )
+        try:
+            with pytest.raises(RuntimeError, match="No team_id given and none saved"):
+                bundle["handlers"]["linear.create_issue"]({"title": "x"}, "stamp")
+        finally:
+            namespace["__rc_helpers__"]["vault_get"] = original

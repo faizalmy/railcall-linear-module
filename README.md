@@ -6,7 +6,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-208%20unit%20%2B%2047%20live-brightgreen.svg)](./tests/)
+[![Tests](https://img.shields.io/badge/tests-214%20unit%20%2B%2049%20live-brightgreen.svg)](./tests/)
 [![Coverage](https://img.shields.io/badge/coverage-77%25-yellowgreen.svg)](./tests/)
 
 *Comprehensive Linear integration with automatic retry, rate limiting, caching, and enterprise-grade error handling*
@@ -148,10 +148,14 @@ python3 tools/build_bundle.py --install
 1. Log in to [Linear](https://linear.app)
 2. Go to **Settings** → **API**
 3. Click **Create new API key**
-4. Copy the key and set it as an environment variable:
+
+Inside the Studio, save it in the **Sends** tab (see
+[Configure the credential](#configure-the-credential)) — not as an environment
+variable. The environment is only used for standalone/library use and the test
+suite:
 
 ```bash
-export LINEAR_API_KEY="lin_api_..."
+export LINEAR_API_KEY="lin_api_..."   # standalone only
 ```
 
 ### Optional: Redis Configuration
@@ -191,11 +195,40 @@ railcall mcp config claude
 
 ### Configure the credential
 
-Commands stay `not_configured` until the `linear` provider has a saved key.
-Add it in **Studio → Sends → Configure** (`api_key`, optionally `team_id`).
-That vault entry is the only credential source inside the Studio. Outside it —
-library use and the test suite — `LINEAR_API_KEY` is used instead, because there
-is no vault to read.
+Commands stay `not_configured` until the `linear` provider has a saved
+credential. There is no CLI command for this — `railcall set` only covers
+Ollama, Discord and Anthropic settings — so use the Studio:
+
+```bash
+railcall studio
+```
+
+Open the **Sends** tab, choose **Linear — API key + team**, and fill both fields:
+
+| Field | Where to get it |
+|-------|-----------------|
+| `api_key` | linear.app/settings/api → Create key (`lin_api_…`, entered masked) |
+| `team_id` | The UUID in `linear.app/{workspace}/settings/teams/{team}/general` |
+
+Both are required by the form, and both are used. The saved team becomes the
+**default for every team-scoped command**, so `create_issue`, `get_team`,
+`create_state`, `create_label`, `list_cycles` and `create_cycle` all work
+without repeating the UUID:
+
+```json
+{ "command": "linear.create_issue", "inputs": { "title": "Fix login bug" } }
+```
+
+Pass `team_id` explicitly to override it, on a multi-team workspace. If neither
+is present the command says so plainly rather than failing at the API.
+
+Saving writes `keys.local.json` (owner-only) and marks the provider configured,
+which flips the commands from `not_configured` to runnable.
+
+That vault entry is the only credential source inside the Studio; the published
+bundle contains no credential environment read at all. Outside the Studio —
+library use and the test suite — `LINEAR_API_KEY` is used instead, because
+there is no vault to read.
 
 ### Read commands
 
@@ -393,7 +426,7 @@ Honest scope boundaries, so nothing surprises you after install:
 
 | Limitation | Detail |
 |------------|--------|
-| **UUIDs only** | No command accepts `ENG-123` or a team name. Start with `list_teams` and carry the ids through. |
+| **UUIDs only** | No command accepts `ENG-123` or a label name. The team UUID is the exception — it defaults to the one saved with the credential. |
 | **`search_issues` matches titles only** | Uses `title: { containsIgnoreCase }`. Descriptions and comments are not searched, so this is not Linear's global search. |
 | **Milestones are project-scoped** | `create_milestone` requires `project_id`. Linear has no workspace-level milestone — the type is `ProjectMilestone`. |
 | **`create_webhook` needs a scope** | Exactly one of `team_id` or `all_public_teams`, even though the manifest lists only `url` as required. |
@@ -642,7 +675,7 @@ This module is submitted to the **RailCall Community Contest 2026 Q3**.
 
 | Metric | Status |
 |--------|--------|
-| Version | 0.2.2 |
+| Version | 0.2.3 |
 | Commands | 30 |
 | Test Coverage | 171 unit (75% lines) + 46 live against a real Linear workspace |
 | Python Support | 3.9+ |

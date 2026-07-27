@@ -86,7 +86,15 @@ class TestManifestShape:
     def test_required_fields_survive_the_rewrite(self, manifest):
         create = next(c for c in manifest["commands"] if c["id"] == "linear.create_issue")
         required = {f for f, s in create["input_schema"].items() if s["required"]}
-        assert required == {"team_id", "title"}
+        assert required == {"title"}
+
+    def test_team_id_is_never_required(self, manifest):
+        """It defaults to the team saved beside the credential, so demanding it
+        in the schema would reject a payload the handler can satisfy."""
+        for command in manifest["commands"]:
+            spec = command["input_schema"].get("team_id")
+            if spec:
+                assert spec["required"] is False, command["id"]
 
     def test_reads_and_writes_get_distinct_modes(self, manifest):
         """resolve_status() maps mode -> whether the airlock gates the command."""
@@ -397,14 +405,16 @@ class TestRegistryTypeVocabulary:
             by_id["linear.create_issue"],
             {"team_id": uuid, "title": "Fix login", "priority": 3},
         ) is None
+        # team_id may be omitted entirely - the handler falls back to the vault
+        assert validate(by_id["linear.create_issue"], {"title": "Fix login"}) is None
         assert validate(by_id["linear.list_teams"], {"limit": 50}) is None
         assert validate(
             by_id["linear.create_webhook"],
             {"url": "https://e.com", "enabled": True},
         ) is None
         # Still catches a genuinely missing required field.
-        assert validate(by_id["linear.create_issue"], {"title": "x"}) == (
-            "missing required field: team_id"
+        assert validate(by_id["linear.create_issue"], {"team_id": uuid}) == (
+            "missing required field: title"
         )
 
 
