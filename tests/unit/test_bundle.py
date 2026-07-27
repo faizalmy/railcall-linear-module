@@ -113,7 +113,8 @@ class TestManifestShape:
         for command in manifest["commands"]:
             assert command["wired"] is True
             assert command["provider"] == "linear"
-            assert command["requires"] == ["LINEAR_API_KEY"]
+            # names the vault provider, not an env var the bundle never reads
+            assert command["requires"] == ["linear"]
 
 
 class TestFlattenedHandler:
@@ -368,14 +369,12 @@ class TestRegistryTypeVocabulary:
         by_id = {c["id"]: c for c in manifest["commands"]}
         priority = by_id["linear.create_issue"]["input_schema"]["priority"]
         assert priority["type"] == "number"
-        assert priority["json_type"] == "integer", "original type kept for docs"
 
     def test_boolean_drops_its_type(self, manifest):
         """No boolean branch exists; a missing type means 'any' and passes."""
         by_id = {c["id"]: c for c in manifest["commands"]}
         enabled = by_id["linear.create_webhook"]["input_schema"]["enabled"]
         assert "type" not in enabled
-        assert enabled["json_type"] == "boolean"
 
     def test_an_integer_payload_would_now_validate(self, manifest):
         """Reproduce validate_inputs against our schema, integers included."""

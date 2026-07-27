@@ -677,3 +677,127 @@ mutation($id: String!, $input: ProjectMilestoneUpdateInput!) {
   }
 }
 """
+
+# Initiative queries
+# Linear renamed Roadmaps to Initiatives; there is no `roadmap` in the schema.
+# An initiative groups projects under one goal and carries its own status and
+# health updates.
+LIST_INITIATIVES = """
+query($first: Int, $after: String, $filter: InitiativeFilter) {
+  initiatives(first: $first, after: $after, filter: $filter) {
+    nodes {
+      id
+      name
+      description
+      status
+      targetDate
+      url
+      owner {
+        id
+        name
+      }
+      createdAt
+      updatedAt
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+"""
+
+GET_INITIATIVE = """
+query($id: String!) {
+  initiative(id: $id) {
+    id
+    name
+    description
+    status
+    targetDate
+    url
+    owner {
+      id
+      name
+    }
+    projects {
+      nodes {
+        id
+        name
+        state
+      }
+    }
+    createdAt
+    updatedAt
+  }
+}
+"""
+
+CREATE_INITIATIVE = """
+mutation($input: InitiativeCreateInput!) {
+  initiativeCreate(input: $input) {
+    success
+    initiative {
+      id
+      name
+      description
+      status
+      targetDate
+      url
+    }
+  }
+}
+"""
+
+UPDATE_INITIATIVE = """
+mutation($id: String!, $input: InitiativeUpdateInput!) {
+  initiativeUpdate(id: $id, input: $input) {
+    success
+    initiative {
+      id
+      name
+      description
+      status
+      targetDate
+      url
+    }
+  }
+}
+"""
+
+LINK_PROJECT_TO_INITIATIVE = """
+mutation($input: InitiativeToProjectCreateInput!) {
+  initiativeToProjectCreate(input: $input) {
+    success
+    initiativeToProject {
+      id
+      initiative {
+        id
+        name
+      }
+      project {
+        id
+        name
+      }
+    }
+  }
+}
+"""
+
+CREATE_INITIATIVE_UPDATE = """
+mutation($input: InitiativeUpdateCreateInput!) {
+  initiativeUpdateCreate(input: $input) {
+    success
+    initiativeUpdate {
+      id
+      body
+      health
+      createdAt
+      user {
+        id
+        name
+      }
+    }
+  }
+}
+"""

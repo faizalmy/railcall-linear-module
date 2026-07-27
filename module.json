@@ -1,8 +1,8 @@
 {
   "id": "agentstack-labs/linear",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "name": "Linear Project Management",
-  "description": "Batch-triage your Linear backlog behind a human approval gate.\n\nMonday triage is death by a thousand clicks: thirty issues arrived over the weekend and each needs an owner, a priority and a state. Doing it in Linear's UI is thirty round trips. Scripting it against the API is fast but unreviewable — nobody sees what is about to change, and nothing records who approved it. This module stages the whole batch as one command: RailCall renders a preview, a human approves once, and the run leaves a receipt whose approval hash is bound to that exact payload.\n\nWHO IT IS FOR: small engineering teams whose triage, sprint setup and release bookkeeping live in Linear, and who need an audit trail because someone eventually asks who closed those twelve tickets.\n\n36 COMMANDS. Issues (8): list, get, create, update, delete, search, bulk_update, link — relations use issueRelationCreate, adding a link without overwriting existing ones. Teams (2), Projects (3), Users (2), Workflow states (3), Labels (3), Cycles (4), Comments (4), Webhooks (4) with explicit scoping, Project milestones (3).\n\nCOMPOSES AS A WORKFLOW: list_issues or search_issues to select, bulk_update_issues to act, create_comment to leave an audit note, link_issues to record what blocks the release. If Linear rate-limits mid-batch the command stops and returns not_attempted, so a re-run resumes where it left off.\n\nAIRLOCK GATING: 16 reads execute immediately. All 20 writes are write_requires_approval — each previews, waits for a human, and emits a receipt. Deletes are flagged high risk. Mutations are never auto-retried: Linear's GraphQL API has no idempotency key, so a retry after an accepted write would duplicate it.\n\nSETUP (two minutes): install, run `railcall studio`, open the Sends tab, pick 'Linear — API key + team' and save your key plus team UUID. That saved team becomes the default for every team-scoped command, so create_issue and friends never repeat the UUID. No CLI equivalent.\n\nSECURITY: the key lives in the station vault. The published bundle contains no credential environment read at all — the build strips them, since it only runs inside the Studio. Never persisted, never written into a cache key or receipt. Receipts store field names and a hash, not values. GraphQL arguments travel as typed variables. Stdlib urllib only — no third-party dependencies.\n\nVerified against a live Linear workspace: all 36 commands exercised end-to-end, plus 214 unit tests. MIT. https://github.com/faizalmy/railcall-linear-module\n\ncontest:2026Q3",
+  "description": "Batch-triage your Linear backlog behind a human approval gate.\n\nMonday triage is death by a thousand clicks: thirty issues arrived over the weekend, each needing an owner, a priority and a state. The UI is thirty round trips; a script is fast but unreviewable — nobody sees what is about to change, and nothing records who approved it. This module stages the whole batch as one command: RailCall previews it, a human approves once, and the run leaves a receipt whose approval hash is bound to that exact payload.\n\nWHO IT IS FOR: small engineering teams running triage, sprints and releases in Linear who need an audit trail when someone asks who closed those twelve tickets.\n\n42 COMMANDS. Issues (8): list, get, create, update, delete, search, bulk_update, link — relations use issueRelationCreate, adding a link without overwriting existing ones. Teams (2), Projects (3), Users (2), Workflow states (3), Labels (3), Cycles (4), Comments (4), Webhooks (4) with explicit scoping, Project milestones (3). Initiatives (6) — Linear's roadmap: create, update, roll projects up under a goal, and post health updates (onTrack/atRisk/offTrack).\n\nCOMPOSES AS A WORKFLOW: search_issues to select, bulk_update_issues to act, create_comment for an audit note, link_issues to record blockers. If Linear rate-limits mid-batch the command stops and returns not_attempted, so a re-run resumes where it left off.\n\nAIRLOCK GATING: 18 reads run immediately. All 24 writes are write_requires_approval — each previews, waits for a human, emits a receipt. Deletes are high risk. Mutations are never auto-retried: Linear has no idempotency key, so a retry after an accepted write would duplicate it.\n\nSETUP (two minutes): install, run `railcall studio`, open the Sends tab, pick 'Linear — API key + team' and save your key plus team UUID. That saved team becomes the default for every team-scoped command, so create_issue and friends never repeat the UUID. No CLI equivalent.\n\nSECURITY: the key lives in the station vault; the published bundle contains no credential environment read at all — the build strips them. Never persisted, never written into a cache key or receipt. Receipts store field names and a hash, not values. GraphQL arguments travel as typed variables. Stdlib urllib only — zero dependencies.\n\nVerified against a live Linear workspace: all 36 commands exercised end-to-end, plus 214 unit tests. MIT. https://github.com/faizalmy/railcall-linear-module\n\ncontest:2026Q3",
   "author": "AgentStack Labs — RailCall modules for engineering workflow tooling",
   "license": "MIT",
   "publisher_pubkey": "a02b37627cdf4e585c6e72e8335ff299c9d8a3e0720281c76efbb9d06fac3959",
@@ -41,7 +41,7 @@
           },
           "limit": {
             "type": "integer",
-            "description": "Maximum results (default: 50, max: 250)",
+            "description": "Max results (default 50, max 250)",
             "default": 50
           }
         }
@@ -190,7 +190,7 @@
           },
           "limit": {
             "type": "integer",
-            "description": "Maximum results (default: 50, max: 250)",
+            "description": "Max results (default 50, max 250)",
             "default": 50
           }
         },
@@ -274,7 +274,7 @@
         "properties": {
           "limit": {
             "type": "integer",
-            "description": "Maximum results (default: 50, max: 250)",
+            "description": "Max results (default 50, max 250)",
             "default": 50
           }
         }
@@ -303,7 +303,7 @@
         "properties": {
           "limit": {
             "type": "integer",
-            "description": "Maximum results (default: 50, max: 250)",
+            "description": "Max results (default 50, max 250)",
             "default": 50
           }
         }
@@ -380,7 +380,7 @@
         "properties": {
           "limit": {
             "type": "integer",
-            "description": "Maximum results (default: 50, max: 250)",
+            "description": "Max results (default 50, max 250)",
             "default": 50
           }
         }
@@ -416,7 +416,7 @@
           },
           "limit": {
             "type": "integer",
-            "description": "Maximum results (default: 50, max: 250)",
+            "description": "Max results (default 50, max 250)",
             "default": 50
           }
         }
@@ -498,7 +498,7 @@
           },
           "limit": {
             "type": "integer",
-            "description": "Maximum results (default: 50, max: 250)",
+            "description": "Max results (default 50, max 250)",
             "default": 50
           }
         }
@@ -576,7 +576,7 @@
           },
           "limit": {
             "type": "integer",
-            "description": "Maximum results (default: 50, max: 250)",
+            "description": "Max results (default 50, max 250)",
             "default": 50
           }
         }
@@ -671,7 +671,7 @@
           },
           "limit": {
             "type": "integer",
-            "description": "Maximum results (default: 50, max: 250)",
+            "description": "Max results (default 50, max 250)",
             "default": 50
           }
         },
@@ -750,7 +750,7 @@
         "properties": {
           "limit": {
             "type": "integer",
-            "description": "Maximum results (default: 50, max: 250)",
+            "description": "Max results (default 50, max 250)",
             "default": 50
           }
         }
@@ -853,7 +853,7 @@
         "properties": {
           "limit": {
             "type": "integer",
-            "description": "Maximum results (default: 50, max: 250)",
+            "description": "Max results (default 50, max 250)",
             "default": 50
           },
           "project_id": {
@@ -919,6 +919,182 @@
         },
         "required": [
           "milestone_id"
+        ]
+      },
+      "side_effects": "write"
+    },
+    {
+      "name": "list_initiatives",
+      "description": "List initiatives (Linear's roadmap objects)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Filter by status",
+            "enum": [
+              "Proposed",
+              "Planned",
+              "Active",
+              "Completed",
+              "Canceled"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max results (default 50, max 250)",
+            "default": 50
+          }
+        }
+      },
+      "side_effects": "none"
+    },
+    {
+      "name": "get_initiative",
+      "description": "Get one initiative with the projects rolled up under it",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "initiative_id": {
+            "type": "string",
+            "description": "Initiative ID"
+          }
+        },
+        "required": [
+          "initiative_id"
+        ]
+      },
+      "side_effects": "none"
+    },
+    {
+      "name": "create_initiative",
+      "description": "Create a new initiative",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Initiative name"
+          },
+          "description": {
+            "type": "string",
+            "description": "Initiative description"
+          },
+          "target_date": {
+            "type": "string",
+            "description": "Target date, stored as YYYY-MM-DD"
+          },
+          "status": {
+            "type": "string",
+            "description": "Initiative status",
+            "enum": [
+              "Proposed",
+              "Planned",
+              "Active",
+              "Completed",
+              "Canceled"
+            ]
+          },
+          "owner_id": {
+            "type": "string",
+            "description": "User ID of the owner"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "side_effects": "write"
+    },
+    {
+      "name": "update_initiative",
+      "description": "Update an existing initiative",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "initiative_id": {
+            "type": "string",
+            "description": "Initiative ID"
+          },
+          "name": {
+            "type": "string",
+            "description": "New name"
+          },
+          "description": {
+            "type": "string",
+            "description": "New description"
+          },
+          "target_date": {
+            "type": "string",
+            "description": "New target date, stored as YYYY-MM-DD"
+          },
+          "status": {
+            "type": "string",
+            "description": "New status",
+            "enum": [
+              "Proposed",
+              "Planned",
+              "Active",
+              "Completed",
+              "Canceled"
+            ]
+          }
+        },
+        "required": [
+          "initiative_id"
+        ]
+      },
+      "side_effects": "write"
+    },
+    {
+      "name": "link_project_to_initiative",
+      "description": "Roll a project up under an initiative",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "initiative_id": {
+            "type": "string",
+            "description": "Initiative ID"
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project ID"
+          }
+        },
+        "required": [
+          "initiative_id",
+          "project_id"
+        ]
+      },
+      "side_effects": "write"
+    },
+    {
+      "name": "create_initiative_update",
+      "description": "Post a status update against an initiative",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "initiative_id": {
+            "type": "string",
+            "description": "Initiative ID"
+          },
+          "body": {
+            "type": "string",
+            "description": "Update text (markdown)"
+          },
+          "health": {
+            "type": "string",
+            "description": "Health signal",
+            "enum": [
+              "onTrack",
+              "atRisk",
+              "offTrack"
+            ]
+          }
+        },
+        "required": [
+          "initiative_id",
+          "body"
         ]
       },
       "side_effects": "write"

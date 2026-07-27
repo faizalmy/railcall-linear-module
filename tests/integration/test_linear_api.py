@@ -29,6 +29,9 @@ from handlers.handler import (
     list_webhooks, create_webhook, update_webhook, delete_webhook,
     # Milestones
     list_milestones, create_milestone, update_milestone,
+    # Initiatives (Linear's roadmap)
+    list_initiatives, get_initiative, create_initiative, update_initiative,
+    link_project_to_initiative, create_initiative_update,
 )
 
 
@@ -722,3 +725,97 @@ class TestMilestones:
         
         assert result["milestone"]["name"] == new_name
         print(f"✓ Updated milestone: {result['milestone']['name']}")
+
+
+def _delete_initiative(initiative_id):
+    """Remove a test initiative. There is no delete_initiative command in this
+    release, so the suite cleans up through the client directly."""
+    from handlers.client import execute_query
+    execute_query(
+        "mutation($id: String!) { initiativeDelete(id: $id) { success } }",
+        {"id": initiative_id},
+    )
+
+
+class TestInitiatives:
+    """Initiatives are Linear's roadmap. This group owns its fixtures.
+
+    The workspace has no initiatives to scavenge, and leaving them behind would
+    accumulate across runs, so each test creates what it needs and deletes it.
+    """
+
+    def test_01_list_initiatives(self):
+        """Should list initiatives without error, even when there are none."""
+        result = list_initiatives(limit=10)
+        assert "initiatives" in result
+        assert result["count"] == len(result["initiatives"])
+        print(f"✓ Listed {result['count']} initiatives")
+
+    def test_02_initiative_lifecycle(self):
+        """create -> get -> update -> post an update -> delete."""
+        name = f"{TEST_PREFIX} Roadmap {RUN_ID}"
+        created = create_initiative(
+            name=name,
+            description="Created by the integration suite.",
+            target_date="2026-12-31T00:00:00Z",
+            status="Planned",
+        )["initiative"]
+        initiative_id = created["id"]
+
+        try:
+            assert created["name"] == name
+            # targetDate is a TimelessDate - the datetime must have been truncated
+            assert created["targetDate"] == "2026-12-31"
+            assert created["status"] == "Planned"
+            print(f"✓ Created initiative: {created['name']}")
+
+            fetched = get_initiative(initiative_id=initiative_id)["initiative"]
+            assert fetched["id"] == initiative_id
+            assert "projects" in fetched
+
+            updated = update_initiative(
+                initiative_id=initiative_id,
+                name=f"{name} (Updated)",
+                status="Active",
+            )["initiative"]
+            assert updated["name"] == f"{name} (Updated)"
+            assert updated["status"] == "Active"
+            print(f"✓ Updated initiative -> status {updated['status']}")
+
+            posted = create_initiative_update(
+                initiative_id=initiative_id,
+                body=f"{TEST_PREFIX} health check",
+                health="onTrack",
+            )["update"]
+            assert posted["health"] == "onTrack"
+            print(f"✓ Posted initiative update: health={posted['health']}")
+        finally:
+            _delete_initiative(initiative_id)
+
+    def test_03_link_project_to_initiative(self):
+        """A project rolled up under an initiative is what makes it a roadmap."""
+        projects = list_projects()["projects"]
+        if not projects:
+            pytest.skip("workspace has no project to roll up")
+
+        created = create_initiative(name=f"{TEST_PREFIX} Rollup {RUN_ID}")["initiative"]
+        initiative_id = created["id"]
+
+        try:
+            result = link_project_to_initiative(
+                initiative_id=initiative_id, project_id=projects[0]["id"]
+            )
+            assert result["success"] is True
+            assert result["link"]["project"]["id"] == projects[0]["id"]
+
+            fetched = get_initiative(initiative_id=initiative_id)["initiative"]
+            linked = [p["id"] for p in fetched["projects"]["nodes"]]
+            assert projects[0]["id"] in linked
+            print(f"✓ Linked project {projects[0]['name']} to the initiative")
+        finally:
+            _delete_initiative(initiative_id)
+
+    def test_04_rejects_an_unknown_status(self):
+        """The enum guard runs before the API call."""
+        with pytest.raises(ValueError, match="status must be one of"):
+            create_initiative(name="x", status="Shipped")

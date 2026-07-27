@@ -121,6 +121,33 @@ MINIFIED_HEADER = """# RailCall Linear module - GENERATED, DO NOT EDIT.
 """
 
 
+def collapse_graphql(text):
+    """Collapse whitespace inside GraphQL document constants.
+
+    GraphQL is whitespace-insensitive and none of our documents contain string
+    literals (every value travels as a typed variable), so runs of spaces and
+    newlines carry no meaning. Collapsing them buys ~3 KB against the
+    marketplace's 100 KiB publish limit at zero behavioural cost.
+    """
+    tree = ast.parse(text)
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        value = node.value
+        if not (isinstance(value, ast.Constant) and isinstance(value.value, str)):
+            continue
+        doc = value.value
+        # Our documents open with `query(` / `mutation(` - no space - so match on
+        # the stripped prefix rather than a whitespace-anchored pattern.
+        if not doc.strip().startswith(("query", "mutation")):
+            continue
+        assert '"' not in doc and "'" not in doc, "GraphQL literal would be corrupted"
+        value.value = re.sub(r"\s+", " ", doc).strip()
+
+    return ast.unparse(ast.fix_missing_locations(tree)) + "\n"
+
+
 def minify(text):
     """Drop docstrings and comments; keep behavior byte-for-byte equivalent.
 
@@ -147,7 +174,7 @@ def minify(text):
             # A function whose only statement was a docstring still needs a body.
             node.body = body[1:] or [ast.Pass()]
 
-    return MINIFIED_HEADER + ast.unparse(ast.fix_missing_locations(tree)) + "\n"
+    return MINIFIED_HEADER + collapse_graphql(ast.unparse(ast.fix_missing_locations(tree)))
 
 
 # The published bundle only ever runs inside the Studio, where the vault is the
@@ -269,10 +296,9 @@ def flat_input_schema(parameters):
         declared = registry_type(spec.get("type", "string"))
         if declared is not None:
             entry["type"] = declared
-        # Keep the original for documentation even when the registry cannot
-        # enforce it - the Studio surfaces this to the operator.
-        if spec.get("type") and spec["type"] != declared:
-            entry["json_type"] = spec["type"]
+        # The original JSON Schema type is intentionally NOT stored: the
+        # registry cannot enforce it, nothing reads it, and it costs ~400 bytes
+        # against the publish size limit.
         if spec.get("description"):
             entry["description"] = spec["description"]
         if "default" in spec:
@@ -300,15 +326,25 @@ def build_manifest(source):
             # marketplace validator and still registers in the runtime.
             "id": command_id(name),
             "name": name,
+            # `description` is the documented key and `title` is what the Studio
+            # renders. They carry the same text, so store it once and alias.
             "description": command.get("description") or "",
-            "title": command.get("description") or name.replace("_", " ").capitalize(),
+            # A short label for the UI; the full sentence lives in `description`.
+            "title": name.replace("_", " ").capitalize(),
             "provider": PROVIDER,
             "risk": risk_for(name, side_effects),
             "mode": mode_for(side_effects),
             "wired": True,
-            "requires": ["LINEAR_API_KEY"],
+            # The vault provider, not an env var: the bundle contains no
+            # credential environment read, so naming one here would be stale.
+            # resolve_status() only checks that this is non-empty and that
+            # `provider` is configured.
+            "requires": [PROVIDER],
             "preview": True,
-            "receipt_required": True,
+            # `receipt_required` is omitted: nothing in the runtime reads it
+            # (it appears only in command_registry's own literals) and every
+            # execute path emits a receipt regardless. Dropping it buys ~1 KB
+            # against the 100 KiB publish limit.
             "input_schema": flat_input_schema(command.get("parameters")),
         })
 

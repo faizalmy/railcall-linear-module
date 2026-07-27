@@ -1,6 +1,6 @@
 # Product Requirements Document: RailCall Linear Module (Production)
 
-**Version:** 0.2.4  
+**Version:** 0.2.5  
 **Status:** Planning  
 **Author:** AgentStack Labs  
 **Date:** 2026-07-26  
@@ -12,7 +12,7 @@
 
 ### 1.1 What We're Building
 
-A production-grade RailCall module (`agentstack-labs/linear`) providing comprehensive governed access to Linear's project management API. The module implements 36 commands across 10 functional categories, supports OAuth2 authentication, includes caching and webhook handlers, and ships with comprehensive test coverage and CI/CD automation.
+A production-grade RailCall module (`agentstack-labs/linear`) providing comprehensive governed access to Linear's project management API. The module implements 42 commands across 10 functional categories, supports OAuth2 authentication, includes caching and webhook handlers, and ships with comprehensive test coverage and CI/CD automation.
 
 ### 1.2 Problem Statement
 
@@ -32,7 +32,7 @@ Linear is referenced in 20+ RailCall workflow templates but no standalone module
 
 | Criterion | Metric | Target |
 |-----------|--------|--------|
-| Command coverage | Full API surface | 36 commands across 10 categories |
+| Command coverage | Full API surface | 42 commands across 10 categories |
 | Authentication | OAuth2 + API key | Both supported |
 | Test coverage | Unit + integration | >80% code coverage |
 | Performance | Cached reads | <200ms for cached operations |
@@ -48,7 +48,7 @@ Linear is referenced in 20+ RailCall workflow templates but no standalone module
 
 ### 2.1 Functional Requirements
 
-#### FR-1: Command Categories (36 commands)
+#### FR-1: Command Categories (42 commands)
 
 **Priority:** P0 (must have)
 
@@ -135,7 +135,7 @@ Transaction support for multi-issue operations.
 **Priority:** P0 (must have)
 
 **Acceptance criteria:**
-- Unit tests for all 36 commands (>80% coverage)
+- Unit tests for all 42 commands (>80% coverage)
 - Integration tests against Linear sandbox
 - Mock API responses for offline testing
 - Test fixtures for common scenarios
@@ -157,7 +157,7 @@ Transaction support for multi-issue operations.
 **Priority:** P0 (must have)
 
 **Acceptance criteria:**
-- API reference for all 36 commands
+- API reference for all 42 commands
 - Installation guide (OAuth2 + API key)
 - Usage examples for common workflows
 - Troubleshooting guide
@@ -269,7 +269,7 @@ Transaction support for multi-issue operations.
 | Aug 6-7 | Set up CI/CD pipeline |
 | Aug 8-10 | Write comprehensive documentation |
 | Aug 11-12 | Performance testing + optimization |
-| Aug 13 | Publish v0.2.4 to marketplace |
+| Aug 13 | Publish v0.2.5 to marketplace |
 | Aug 14-25 | Iterate based on feedback |
 | Aug 25 | Contest submissions close |
 | Aug 29 | Winners announced |

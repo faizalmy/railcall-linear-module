@@ -2,11 +2,11 @@
 
 <div align="center">
 
-**Production-grade Linear integration for RailCall with 36 commands**
+**Production-grade Linear integration for RailCall with 42 commands**
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-214%20unit%20%2B%2049%20live-brightgreen.svg)](./tests/)
+[![Tests](https://img.shields.io/badge/tests-226%20unit%20%2B%2053%20live-brightgreen.svg)](./tests/)
 [![Coverage](https://img.shields.io/badge/coverage-77%25-yellowgreen.svg)](./tests/)
 
 *Comprehensive Linear integration with automatic retry, rate limiting, caching, and enterprise-grade error handling*
@@ -54,12 +54,12 @@ eventually asks "who closed those twelve tickets?"
 
 ### Scope
 
-36 commands across 10 categories with built-in resilience, caching, and
-comprehensive error handling. 16 reads execute immediately; 20 writes are
+42 commands across 11 categories with built-in resilience, caching, and
+comprehensive error handling. 18 reads execute immediately; 24 writes are
 `write_requires_approval` and gated by the Approval Airlock.
 
 **Key Benefits:**
-- ✅ **36 Commands** - Full coverage of Linear's API surface
+- ✅ **42 Commands** - Full coverage of Linear's API surface
 - ✅ **Automatic Retry** - Capped exponential backoff with jitter, honoring `Retry-After`
 - ✅ **Rate Limiting** - Built-in protection against Linear's API limits (50 req/10s)
 - ✅ **Caching** - Redis or in-memory, per-workspace scoped, for metadata reads
@@ -112,7 +112,7 @@ comprehensive error handling. 16 reads execute immediately; 20 writes are
 railcall market install agentstack-labs/linear
 ```
 
-The Studio verifies the bundle's Ed25519 signature and registers its 36 commands
+The Studio verifies the bundle's Ed25519 signature and registers its 42 commands
 on the next module reload.
 
 ### Install from Source
@@ -234,7 +234,7 @@ there is no vault to read.
 
 ### Read commands
 
-16 of the 36 commands are read-only and execute without approval. Start with
+16 of the 42 commands are read-only and execute without approval. Start with
 `linear.list_teams` - every other command needs a team UUID:
 
 ```json
@@ -243,7 +243,7 @@ there is no vault to read.
 
 ### Write commands
 
-The remaining 20 are `write_requires_approval`: the Studio renders a preview,
+The remaining 24 are `write_requires_approval`: the Studio renders a preview,
 you approve, and the run emits a signed receipt.
 
 ```json
@@ -346,6 +346,22 @@ teams = list_teams(limit=50)
 | `update_webhook` | Update an existing webhook | write |
 | `delete_webhook` | Delete a webhook | write |
 
+### Initiatives — Linear's roadmap (6 commands)
+
+Linear renamed Roadmaps to Initiatives; there is no `roadmap` in the API. An
+initiative groups projects under one goal and collects health updates.
+
+| Command | Description | Side Effects |
+|---------|-------------|--------------|
+| `list_initiatives` | List initiatives, optionally filtered by status | none |
+| `get_initiative` | Get one initiative with the projects rolled up under it | none |
+| `create_initiative` | Create a new initiative | write |
+| `update_initiative` | Update name, description, target date or status | write |
+| `link_project_to_initiative` | Roll a project up under an initiative | write |
+| `create_initiative_update` | Post a status update (`onTrack`/`atRisk`/`offTrack`) | write |
+
+Statuses: `Proposed`, `Planned`, `Active`, `Completed`, `Canceled`.
+
 ### Milestones (3 commands)
 
 | Command | Description | Side Effects |
@@ -445,7 +461,7 @@ Honest scope boundaries, so nothing surprises you after install:
 
 ```
 railcall-linear-module/
-├── module.json              # Authoring manifest (36 commands)
+├── module.json              # Authoring manifest (42 commands)
 ├── tools/
 │   └── build_bundle.py      # Generates + signs the RailCall bundle
 ├── dist/                    # Generated bundle (gitignored)
@@ -463,7 +479,7 @@ railcall-linear-module/
 │       ├── errors.py        # Error handling utilities
 │       ├── validation.py    # Input validation
 │       └── pagination.py    # Pagination utilities
-├── tests/                   # 214 unit + 49 live (package + generated bundle)
+├── tests/                   # 226 unit + 53 live (package + generated bundle)
 ├── docs/                    # Documentation
 └── .github/workflows/       # CI/CD pipeline
 ```
@@ -677,9 +693,9 @@ This module is submitted to the **RailCall Community Contest 2026 Q3**.
 
 | Metric | Status |
 |--------|--------|
-| Version | 0.2.4 |
+| Version | 0.2.5 |
 | Commands | 30 |
-| Test Coverage | 214 unit (77% lines) + 49 live against a real Linear workspace |
+| Test Coverage | 226 unit (77% lines) + 53 live against a real Linear workspace |
 | Python Support | 3.9+ |
 | License | MIT |
 | Production Ready | ✅ Yes |

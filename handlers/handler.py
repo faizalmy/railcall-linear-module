@@ -1,6 +1,6 @@
 """RailCall Linear Module - Production Grade
 
-A comprehensive Linear integration for RailCall with 36 commands covering:
+A comprehensive Linear integration for RailCall with 42 commands covering:
 - Issue management (8): list, get, create, update, delete, search, bulk_update, link
 - Team management (2): list, get
 - Project management (3): list, get, create
@@ -11,6 +11,7 @@ A comprehensive Linear integration for RailCall with 36 commands covering:
 - Comments (4): list, create, update, delete
 - Webhooks (4): list, create, update, delete
 - Milestones (3): list, create, update
+- Initiatives (6): list, get, create, update, link project, post update
 
 All commands support:
 - Automatic retry with capped exponential backoff and Retry-After support
@@ -27,6 +28,12 @@ from .client import execute_query
 from .cache import cached, invalidate_all
 from .credentials import resolve_default_team_id
 from .queries import (
+    LIST_INITIATIVES,
+    GET_INITIATIVE,
+    CREATE_INITIATIVE,
+    UPDATE_INITIATIVE,
+    LINK_PROJECT_TO_INITIATIVE,
+    CREATE_INITIATIVE_UPDATE,
     LIST_ISSUES,
     GET_ISSUE,
     CREATE_ISSUE,
@@ -75,6 +82,7 @@ from .utils import (
     validate_cycle_id,
     validate_comment_id,
     validate_milestone_id,
+    validate_initiative_id,
     validate_webhook_id,
     validate_priority,
     validate_limit,
@@ -1562,3 +1570,258 @@ def update_milestone(
         raise ValueError("Failed to update milestone")
 
     return {"milestone": result["projectMilestoneUpdate"]["projectMilestone"]}
+
+
+# ============================================================================
+# INITIATIVE COMMANDS (6 commands)
+# ============================================================================
+# Linear renamed Roadmaps to Initiatives - there is no `roadmap` in the schema.
+# An initiative groups projects under one goal, carries a status, and collects
+# health updates over time.
+
+INITIATIVE_STATUSES = ["Proposed", "Planned", "Active", "Completed", "Canceled"]
+INITIATIVE_HEALTH = ["onTrack", "atRisk", "offTrack"]
+
+
+def list_initiatives(
+    status: Optional[str] = None,
+    limit: int = 50,
+    context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """List initiatives (Linear's roadmap objects).
+
+    Args:
+        status: Optional status filter (Proposed, Planned, Active, Completed, Canceled)
+        limit: Maximum number of results (default: 50)
+        context: RailCall context (unused)
+
+    Returns:
+        Dict with initiatives list
+    """
+    limit = validate_limit(limit, max_limit=250)
+
+    initiative_filter: Dict[str, Any] = {}
+    if status:
+        if status not in INITIATIVE_STATUSES:
+            raise ValueError(
+                "status must be one of: " + ", ".join(INITIATIVE_STATUSES)
+            )
+        initiative_filter["status"] = {"eq": status}
+
+    initiatives = paginate_query(
+        query_func=_run_query,
+        query=LIST_INITIATIVES,
+        variables={"filter": initiative_filter} if initiative_filter else {},
+        limit=limit,
+        data_key="initiatives",
+    )
+
+    return {
+        "initiatives": initiatives,
+        "count": len(initiatives),
+    }
+
+
+def get_initiative(
+    initiative_id: str,
+    context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Get one initiative, including the projects rolled up under it.
+
+    Args:
+        initiative_id: Initiative ID
+        context: RailCall context (unused)
+
+    Returns:
+        Dict with initiative details
+    """
+    validate_initiative_id(initiative_id)
+
+    result = execute_query(GET_INITIATIVE, {"id": initiative_id})
+
+    if not result.get("initiative"):
+        raise ValueError(f"Initiative not found: {initiative_id}")
+
+    return {"initiative": result["initiative"]}
+
+
+def create_initiative(
+    name: str,
+    description: Optional[str] = None,
+    target_date: Optional[str] = None,
+    status: Optional[str] = None,
+    owner_id: Optional[str] = None,
+    context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Create a new initiative.
+
+    Args:
+        name: Initiative name (required)
+        description: Initiative description
+        target_date: Target date. Stored as a TimelessDate, so an ISO datetime
+            is truncated to its date part (YYYY-MM-DD).
+        status: Proposed, Planned, Active, Completed or Canceled
+        owner_id: User ID of the initiative owner
+        context: RailCall context (unused)
+
+    Returns:
+        Dict with created initiative
+    """
+    validate_non_empty(name, "name")
+
+    if status is not None and status not in INITIATIVE_STATUSES:
+        raise ValueError("status must be one of: " + ", ".join(INITIATIVE_STATUSES))
+    if owner_id:
+        validate_user_id(owner_id)
+
+    input_data: Dict[str, Any] = {"name": name}
+
+    if description is not None:
+        input_data["description"] = description
+    if target_date is not None:
+        input_data["targetDate"] = validate_timeless_date(target_date, "target_date")
+    if status is not None:
+        input_data["status"] = status
+    if owner_id:
+        input_data["ownerId"] = owner_id
+
+    result = execute_query(CREATE_INITIATIVE, {"input": input_data})
+
+    if not result.get("initiativeCreate", {}).get("success"):
+        raise ValueError("Failed to create initiative")
+
+    invalidate_all("list_initiatives")
+
+    return {"initiative": result["initiativeCreate"]["initiative"]}
+
+
+def update_initiative(
+    initiative_id: str,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    target_date: Optional[str] = None,
+    status: Optional[str] = None,
+    context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Update an existing initiative.
+
+    Args:
+        initiative_id: Initiative ID (required)
+        name: New name
+        description: New description
+        target_date: New target date (truncated to YYYY-MM-DD)
+        status: New status
+        context: RailCall context (unused)
+
+    Returns:
+        Dict with updated initiative
+    """
+    validate_initiative_id(initiative_id)
+
+    if name is not None:
+        validate_non_empty(name, "name")
+    if status is not None and status not in INITIATIVE_STATUSES:
+        raise ValueError("status must be one of: " + ", ".join(INITIATIVE_STATUSES))
+
+    input_data: Dict[str, Any] = {}
+    if name is not None:
+        input_data["name"] = name
+    if description is not None:
+        input_data["description"] = description
+    if target_date is not None:
+        input_data["targetDate"] = validate_timeless_date(target_date, "target_date")
+    if status is not None:
+        input_data["status"] = status
+
+    if not input_data:
+        raise ValueError("No fields to update")
+
+    result = execute_query(
+        UPDATE_INITIATIVE, {"id": initiative_id, "input": input_data}
+    )
+
+    if not result.get("initiativeUpdate", {}).get("success"):
+        raise ValueError("Failed to update initiative")
+
+    invalidate_all("list_initiatives")
+
+    return {"initiative": result["initiativeUpdate"]["initiative"]}
+
+
+def link_project_to_initiative(
+    initiative_id: str,
+    project_id: str,
+    context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Roll a project up under an initiative.
+
+    This is what makes an initiative a roadmap rather than a label: the projects
+    attached to it are the work it tracks.
+
+    Args:
+        initiative_id: Initiative ID (required)
+        project_id: Project ID (required)
+        context: RailCall context (unused)
+
+    Returns:
+        Dict with the created link
+    """
+    validate_initiative_id(initiative_id)
+    validate_project_id(project_id)
+
+    input_data: Dict[str, Any] = {
+        "initiativeId": initiative_id,
+        "projectId": project_id,
+    }
+
+    result = execute_query(LINK_PROJECT_TO_INITIATIVE, {"input": input_data})
+
+    if not result.get("initiativeToProjectCreate", {}).get("success"):
+        raise ValueError("Failed to link project to initiative")
+
+    invalidate_all("list_initiatives")
+
+    return {
+        "success": True,
+        "initiative_id": initiative_id,
+        "project_id": project_id,
+        "link": result["initiativeToProjectCreate"].get("initiativeToProject"),
+    }
+
+
+def create_initiative_update(
+    initiative_id: str,
+    body: str,
+    health: Optional[str] = None,
+    context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Post a status update against an initiative.
+
+    Args:
+        initiative_id: Initiative ID (required)
+        body: Update text, markdown (required)
+        health: onTrack, atRisk or offTrack
+        context: RailCall context (unused)
+
+    Returns:
+        Dict with the created update
+    """
+    validate_initiative_id(initiative_id)
+    validate_non_empty(body, "body")
+
+    if health is not None and health not in INITIATIVE_HEALTH:
+        raise ValueError("health must be one of: " + ", ".join(INITIATIVE_HEALTH))
+
+    input_data: Dict[str, Any] = {
+        "initiativeId": initiative_id,
+        "body": body,
+    }
+    if health is not None:
+        input_data["health"] = health
+
+    result = execute_query(CREATE_INITIATIVE_UPDATE, {"input": input_data})
+
+    if not result.get("initiativeUpdateCreate", {}).get("success"):
+        raise ValueError("Failed to create initiative update")
+
+    return {"update": result["initiativeUpdateCreate"]["initiativeUpdate"]}

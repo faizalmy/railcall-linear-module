@@ -39,6 +39,12 @@ from handlers.handler import (
     list_milestones,
     create_milestone,
     update_milestone,
+    list_initiatives,
+    get_initiative,
+    create_initiative,
+    update_initiative,
+    link_project_to_initiative,
+    create_initiative_update,
 )
 from handlers.utils.errors import LinearError, RateLimitError, ValidationError
 
@@ -1022,3 +1028,138 @@ class TestTeamIdDefault:
             mock_query.return_value = responses[name]
             with self._vault(self.TEAM):
                 fn(**kwargs)  # must not raise
+
+
+class TestInitiativeCommands:
+    """Initiatives are Linear's roadmap objects - `roadmap` is not in the schema."""
+
+    INITIATIVE = "123e4567-e89b-12d3-a456-426614174000"
+    PROJECT = "123e4567-e89b-12d3-a456-426614174001"
+    USER = "123e4567-e89b-12d3-a456-426614174002"
+
+    @patch('handlers.handler.execute_query')
+    def test_list_filters_by_status(self, mock_query):
+        mock_query.return_value = {
+            "initiatives": {"nodes": [], "pageInfo": {"hasNextPage": False, "endCursor": None}}
+        }
+
+        list_initiatives(status="Active", limit=5)
+
+        assert mock_query.call_args[0][1]["filter"] == {"status": {"eq": "Active"}}
+
+    @patch('handlers.handler.execute_query')
+    def test_list_rejects_an_unknown_status(self, mock_query):
+        with pytest.raises(ValueError, match="status must be one of"):
+            list_initiatives(status="Shipped")
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_get_requires_a_uuid(self, mock_query):
+        with pytest.raises(ValidationError):
+            get_initiative(initiative_id="nope")
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_create_sends_only_what_was_given(self, mock_query):
+        mock_query.return_value = {
+            "initiativeCreate": {"success": True, "initiative": {"id": "i-1", "name": "Q4"}}
+        }
+
+        create_initiative(name="Q4 platform")
+
+        assert mock_query.call_args[0][1]["input"] == {"name": "Q4 platform"}
+
+    @patch('handlers.handler.execute_query')
+    def test_create_truncates_target_date_to_a_timeless_date(self, mock_query):
+        """InitiativeCreateInput.targetDate is TimelessDate, not a datetime."""
+        mock_query.return_value = {
+            "initiativeCreate": {"success": True, "initiative": {"id": "i-1"}}
+        }
+
+        create_initiative(
+            name="Q4", target_date="2026-12-31T23:59:59Z", status="Planned",
+            owner_id=self.USER,
+        )
+
+        payload = mock_query.call_args[0][1]["input"]
+        assert payload["targetDate"] == "2026-12-31"
+        assert payload["status"] == "Planned"
+        assert payload["ownerId"] == self.USER
+
+    @patch('handlers.handler.execute_query')
+    def test_create_rejects_an_unknown_status(self, mock_query):
+        with pytest.raises(ValueError, match="status must be one of"):
+            create_initiative(name="Q4", status="Done")
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_update_requires_at_least_one_field(self, mock_query):
+        with pytest.raises(ValueError, match="No fields to update"):
+            update_initiative(initiative_id=self.INITIATIVE)
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_link_project_sends_both_ids(self, mock_query):
+        mock_query.return_value = {
+            "initiativeToProjectCreate": {"success": True, "initiativeToProject": {"id": "l-1"}}
+        }
+
+        result = link_project_to_initiative(
+            initiative_id=self.INITIATIVE, project_id=self.PROJECT
+        )
+
+        assert mock_query.call_args[0][1]["input"] == {
+            "initiativeId": self.INITIATIVE,
+            "projectId": self.PROJECT,
+        }
+        assert result["success"] is True
+
+    @patch('handlers.handler.execute_query')
+    def test_update_post_carries_health(self, mock_query):
+        mock_query.return_value = {
+            "initiativeUpdateCreate": {"success": True, "initiativeUpdate": {"id": "u-1"}}
+        }
+
+        create_initiative_update(
+            initiative_id=self.INITIATIVE, body="On track for Q4", health="onTrack"
+        )
+
+        payload = mock_query.call_args[0][1]["input"]
+        assert payload["health"] == "onTrack"
+        assert payload["body"] == "On track for Q4"
+
+    @patch('handlers.handler.execute_query')
+    def test_update_post_rejects_unknown_health(self, mock_query):
+        with pytest.raises(ValueError, match="health must be one of"):
+            create_initiative_update(
+                initiative_id=self.INITIATIVE, body="x", health="green"
+            )
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_update_post_rejects_empty_body(self, mock_query):
+        with pytest.raises(ValidationError):
+            create_initiative_update(initiative_id=self.INITIATIVE, body="   ")
+        mock_query.assert_not_called()
+
+    @patch('handlers.handler.execute_query')
+    def test_writes_invalidate_the_initiative_list(self, mock_query):
+        mock_query.return_value = {
+            "initiatives": {"nodes": [], "pageInfo": {"hasNextPage": False, "endCursor": None}}
+        }
+        list_initiatives()
+        first = mock_query.call_count
+
+        mock_query.return_value = {
+            "initiativeCreate": {"success": True, "initiative": {"id": "i-1"}}
+        }
+        create_initiative(name="Q4")
+
+        mock_query.return_value = {
+            "initiatives": {
+                "nodes": [{"id": "i-1", "name": "Q4"}],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            }
+        }
+        assert list_initiatives()["count"] == 1
+        assert mock_query.call_count > first

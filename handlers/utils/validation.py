@@ -131,6 +131,18 @@ def validate_milestone_id(milestone_id: str) -> None:
     validate_uuid(milestone_id, "milestone_id")
 
 
+def validate_initiative_id(initiative_id: str) -> None:
+    """Validate initiative ID format.
+
+    Args:
+        initiative_id: Initiative ID to validate
+
+    Raises:
+        ValidationError: If initiative ID format is invalid
+    """
+    validate_uuid(initiative_id, "initiative_id")
+
+
 def validate_webhook_id(webhook_id: str) -> None:
     """Validate webhook ID format.
     
