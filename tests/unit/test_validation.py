@@ -10,6 +10,13 @@ from handlers.utils.validation import (
     validate_iso_date,
     validate_non_empty,
     validate_comment_id,
+    validate_resource_types,
+    validate_label_id,
+    validate_cycle_id,
+    validate_milestone_id,
+    validate_webhook_id,
+    validate_initiative_id,
+    validate_state_id,
 )
 from handlers.utils.errors import ValidationError
 
@@ -78,6 +85,11 @@ class TestValidateLimit:
         """Should reject zero limit."""
         with pytest.raises(ValidationError, match="Limit must be a positive integer"):
             validate_limit(0, max_limit=100)
+
+    def test_omitted_limit_falls_back_to_the_default(self):
+        """Every list command passes limit through, so None is the common path."""
+        assert validate_limit(None) == 50
+        assert validate_limit(None, default=10) == 10
 
 
 class TestValidateURL:
@@ -153,3 +165,51 @@ class TestCommentIdValidation:
     def test_rejects_garbage(self):
         with pytest.raises(ValidationError):
             validate_comment_id("not-a-uuid")
+
+
+class TestResourceTypeValidation:
+    """create_webhook's resourceTypes list reaches Linear verbatim.
+
+    The empty-list case was covered through create_webhook; the per-item check
+    was not, so a list holding a number or a blank string would have been
+    caught only by Linear, one network round trip later.
+    """
+
+    def test_accepts_linear_resource_types(self):
+        validate_resource_types(["Issue", "Comment"])
+
+    def test_rejects_empty_list(self):
+        with pytest.raises(ValidationError, match="cannot be empty"):
+            validate_resource_types([])
+
+    @pytest.mark.parametrize("bad", [["Issue", 42], ["Issue", ""], ["  "], [None]])
+    def test_rejects_non_string_or_blank_entries(self, bad):
+        with pytest.raises(ValidationError, match="Invalid resource type"):
+            validate_resource_types(bad)
+
+
+class TestIdValidatorsDelegate:
+    """Each typed id validator is a thin wrapper over validate_uuid.
+
+    Thin enough that they were never asserted directly - so a wrapper that
+    forgot to call validate_uuid, or named the wrong field in its error, would
+    pass the suite while accepting garbage in production.
+    """
+
+    VALIDATORS = [
+        (validate_label_id, "label_id"),
+        (validate_cycle_id, "cycle_id"),
+        (validate_milestone_id, "milestone_id"),
+        (validate_webhook_id, "webhook_id"),
+        (validate_initiative_id, "initiative_id"),
+        (validate_state_id, "state_id"),
+    ]
+
+    @pytest.mark.parametrize("validator,field", VALIDATORS)
+    def test_accepts_uuid(self, validator, field):
+        validator("123e4567-e89b-12d3-a456-426614174000")
+
+    @pytest.mark.parametrize("validator,field", VALIDATORS)
+    def test_rejects_garbage_and_names_the_field(self, validator, field):
+        with pytest.raises(ValidationError, match=field):
+            validator("ENG-123")

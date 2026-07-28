@@ -98,3 +98,4 @@ logs/
 AGENTS.md
 CLAUDE.md
 .claude/
+.code-review-graph
