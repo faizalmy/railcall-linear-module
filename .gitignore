@@ -92,3 +92,9 @@ logs/
 *.db
 *.sqlite
 *.sqlite3
+.gitnexus
+
+# GitNexus generated context/tooling (indexing artifacts, not project source)
+AGENTS.md
+CLAUDE.md
+.claude/

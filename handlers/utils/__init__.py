@@ -31,9 +31,8 @@ from .validation import (
     validate_timeless_date,
     validate_resource_types,
     validate_non_empty,
-    validate_webhook_events,
 )
-from .pagination import paginate_query, build_pagination_query
+from .pagination import paginate_query
 
 __all__ = [
     "LinearError",
@@ -64,7 +63,5 @@ __all__ = [
     "validate_timeless_date",
     "validate_resource_types",
     "validate_non_empty",
-    "validate_webhook_events",
     "paginate_query",
-    "build_pagination_query",
 ]

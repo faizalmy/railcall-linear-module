@@ -1799,8 +1799,6 @@ def create_initiative(
     if not result.get("initiativeCreate", {}).get("success"):
         raise ValueError("Failed to create initiative")
 
-    invalidate_all("list_initiatives")
-
     return {"initiative": result["initiativeCreate"]["initiative"]}
 
 
@@ -1852,8 +1850,6 @@ def update_initiative(
     if not result.get("initiativeUpdate", {}).get("success"):
         raise ValueError("Failed to update initiative")
 
-    invalidate_all("list_initiatives")
-
     return {"initiative": result["initiativeUpdate"]["initiative"]}
 
 
@@ -1887,8 +1883,6 @@ def link_project_to_initiative(
 
     if not result.get("initiativeToProjectCreate", {}).get("success"):
         raise ValueError("Failed to link project to initiative")
-
-    invalidate_all("list_initiatives")
 
     return {
         "success": True,

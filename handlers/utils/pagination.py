@@ -61,30 +61,3 @@ def paginate_query(
             break
 
     return all_results[:limit]
-
-
-def build_pagination_query(
-    base_query: str,
-    has_filter: bool = False,
-) -> str:
-    """Build paginated GraphQL query with proper variables.
-    
-    Args:
-        base_query: Base query without pagination
-        has_filter: Whether query has filter parameter
-        
-    Returns:
-        Query with pagination variables
-    """
-    if has_filter:
-        return f"""
-        query($filter: IssueFilter, $first: Int, $after: String) {{
-            {base_query}
-        }}
-        """
-    else:
-        return f"""
-        query($first: Int, $after: String) {{
-            {base_query}
-        }}
-        """

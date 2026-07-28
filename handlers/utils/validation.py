@@ -310,33 +310,3 @@ def validate_resource_types(resource_types: list) -> None:
     for item in resource_types:
         if not isinstance(item, str) or not item.strip():
             raise ValidationError(f"Invalid resource type: {item!r}. Expected a non-empty string.")
-
-
-def validate_webhook_events(events: list) -> None:
-    """Validate webhook event types.
-    
-    Args:
-        events: List of event types to validate
-        
-    Raises:
-        ValidationError: If event types are invalid
-    """
-    valid_events = {
-        "issue.created",
-        "issue.updated",
-        "issue.deleted",
-        "issue.archived",
-        "project.created",
-        "project.updated",
-        "project.deleted",
-        "team.created",
-        "team.updated",
-        "team.deleted",
-        "comment.created",
-        "comment.updated",
-        "comment.deleted",
-    }
-    
-    for event in events:
-        if event not in valid_events:
-            raise ValidationError(f"Invalid webhook event type: {event}")
