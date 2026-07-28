@@ -234,6 +234,50 @@ class TestIssueManagement:
         assert result["issue"]["title"] == f"{TEST_PREFIX} Integration Test Issue (Updated)"
         print(f"✓ Updated issue: {test_issue['identifier']}")
 
+    def test_09_commands_accept_the_human_identifier(self):
+        """ENG-123 must work everywhere the UUID does.
+
+        The validator accepting both forms proves nothing on its own - what
+        matters is that Linear resolves the identifier on each mutation, so
+        this drives read, update, comment and archive through it. Owns its
+        fixture: it archives, which would strand an issue the other tests read.
+        """
+        teams = list_teams()
+        team_id = teams["teams"][0]["id"]
+
+        issue = create_issue(
+            team_id=team_id,
+            title=f"{TEST_PREFIX} Identifier Path {RUN_ID}",
+            description="Created by test_09 to drive commands by ENG-123.",
+        )["issue"]
+        identifier = issue["identifier"]
+
+        try:
+            fetched = get_issue(issue_id=identifier)
+            assert fetched["issue"]["id"] == issue["id"]
+
+            # Lowercase too - Linear matches the key case-insensitively.
+            lowered = get_issue(issue_id=identifier.lower())
+            assert lowered["issue"]["id"] == issue["id"]
+
+            renamed = f"{TEST_PREFIX} Identifier Path {RUN_ID} (Updated)"
+            updated = update_issue(issue_id=identifier, title=renamed)
+            assert updated["issue"]["title"] == renamed
+            assert updated["issue"]["id"] == issue["id"], "resolved a different issue"
+
+            comment = create_comment(
+                issue_id=identifier, body=f"{TEST_PREFIX} by identifier"
+            )
+            assert comment["comment"]["id"]
+
+            archived = archive_issue(issue_id=identifier)
+            assert archived["success"] is True
+            unarchive_issue(issue_id=identifier)
+
+            print(f"✓ get/update/comment/archive all accept {identifier}")
+        finally:
+            delete_issue(issue_id=issue["id"])
+
 
 class TestTeamManagement:
     """Integration tests for team operations."""

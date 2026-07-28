@@ -59,8 +59,8 @@ run immediately; 27 writes are gated by the Airlock.
 
 ## Known limitations
 
-- **UUIDs only** for issues, states and labels; no `ENG-123`. The team UUID is
-  the exception — it defaults to the one saved with the key.
+- **States and labels are UUID-only.** Issues take either `ENG-123` or a UUID;
+  the team UUID defaults to the one saved with the key.
 - **Milestones are project-scoped.** `create_milestone` requires a `project_id`;
   Linear has no workspace-level milestone.
 - **`create_webhook` needs a scope** — one of `team_id` or `all_public_teams`.
@@ -72,7 +72,7 @@ run immediately; 27 writes are gated by the Airlock.
 
 ## Verification
 
-251 unit tests and 56 live tests against a real Linear workspace; all 45
+287 unit tests and 57 live tests against a real Linear workspace; all 45
 commands exercised end-to-end. Source, architecture notes, bundle build tool and
 CI: <https://github.com/faizalmy/railcall-linear-module>
 

@@ -6,19 +6,20 @@ from typing import Optional
 
 from .errors import ValidationError
 
+UUID_PATTERN = r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
+
 
 def validate_uuid(value: str, field_name: str) -> None:
     """Validate UUID format.
-    
+
     Args:
         value: UUID string to validate
         field_name: Name of the field for error messages
-        
+
     Raises:
         ValidationError: If UUID format is invalid
     """
-    uuid_pattern = r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
-    if not re.match(uuid_pattern, value):
+    if not re.match(UUID_PATTERN, value):
         raise ValidationError(f"Invalid {field_name} format: {value}. Expected UUID format.")
 
 
@@ -35,16 +36,40 @@ def validate_priority(priority: int) -> None:
         raise ValidationError(f"Priority must be 0-4 (none, urgent, high, medium, low), got {priority}")
 
 
+# Linear's human-readable issue key: team key, a dash, then a number - ENG-123.
+# Team keys are alphanumeric and start with a letter; Linear matches them
+# case-insensitively, so `eng-123` resolves the same issue as `ENG-123`.
+ISSUE_IDENTIFIER_PATTERN = r'^[A-Za-z][A-Za-z0-9]*-\d+$'
+
+
 def validate_issue_id(issue_id: str) -> None:
-    """Validate Linear issue ID format.
-    
+    """Validate an issue reference: either a UUID or an ENG-123 identifier.
+
+    Linear's `issue(id:)` argument and every issue mutation accept both forms -
+    verified live against issueUpdate, issueArchive, commentCreate and
+    issueRelationCreate. Requiring the UUID was this module's own restriction,
+    not the API's, and it forced operators to go hunting for a UUID when the
+    identifier was already in front of them in the Linear URL.
+
     Args:
-        issue_id: Issue ID to validate
-        
+        issue_id: Issue UUID or team identifier (e.g. "ENG-123")
+
     Raises:
-        ValidationError: If issue ID format is invalid
+        ValidationError: If the value is neither form
     """
-    validate_uuid(issue_id, "issue_id")
+    if not issue_id or not isinstance(issue_id, str):
+        raise ValidationError(
+            "Invalid issue_id: expected a UUID or an identifier like 'ENG-123'."
+        )
+
+    if re.match(ISSUE_IDENTIFIER_PATTERN, issue_id):
+        return
+
+    if not re.match(UUID_PATTERN, issue_id):
+        raise ValidationError(
+            f"Invalid issue_id format: {issue_id}. Expected a UUID or an "
+            f"identifier like 'ENG-123'."
+        )
 
 
 def validate_team_id(team_id: str) -> None:

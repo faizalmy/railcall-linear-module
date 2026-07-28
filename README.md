@@ -6,8 +6,8 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-251%20unit%20%2B%2056%20live-brightgreen.svg)](./tests/)
-[![Coverage](https://img.shields.io/badge/coverage-78%25-yellowgreen.svg)](./tests/)
+[![Tests](https://img.shields.io/badge/tests-287%20unit%20%2B%2057%20live-brightgreen.svg)](./tests/)
+[![Coverage](https://img.shields.io/badge/coverage-79%25-yellowgreen.svg)](./tests/)
 [![CI](https://github.com/faizalmy/railcall-linear-module/actions/workflows/ci.yml/badge.svg)](https://github.com/faizalmy/railcall-linear-module/actions/workflows/ci.yml)
 
 *Comprehensive Linear integration with automatic retry, rate limiting, caching, and enterprise-grade error handling*
@@ -453,7 +453,7 @@ Honest scope boundaries, so nothing surprises you after install:
 
 | Limitation | Detail |
 |------------|--------|
-| **UUIDs only** | No command accepts `ENG-123` or a label name. The team UUID is the exception — it defaults to the one saved with the credential. |
+| **UUIDs for everything but issues** | Issue commands accept `ENG-123` as well as the UUID; states, labels and the rest are UUID-only, and no command accepts a label *name*. The team UUID defaults to the one saved with the credential. |
 | **Milestones are project-scoped** | `create_milestone` requires `project_id`. Linear has no workspace-level milestone — the type is `ProjectMilestone`. |
 | **`create_webhook` needs a scope** | Exactly one of `team_id` or `all_public_teams`, even though the manifest lists only `url` as required. |
 | **`create_state` rejects `triage`** | Triage is a per-team setting in Linear, not a creatable workflow state. Valid types: backlog, unstarted, started, completed, canceled. |
@@ -487,7 +487,7 @@ railcall-linear-module/
 │       ├── errors.py        # Error handling utilities
 │       ├── validation.py    # Input validation
 │       └── pagination.py    # Pagination utilities
-├── tests/                   # 251 unit + 56 live (package + generated bundle)
+├── tests/                   # 287 unit + 57 live (package + generated bundle)
 ├── docs/                    # Documentation
 └── .github/workflows/       # CI/CD pipeline
 ```
@@ -604,7 +604,9 @@ pip install .
 **Error:** `VALIDATION_ERROR: Invalid UUID format`
 
 **Solution:**
-- Ensure all IDs are valid UUIDs (format: `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`)
+- Issue arguments take either a UUID or the identifier from the Linear URL
+  (`ENG-123`, case-insensitive)
+- Every other ID must be a UUID (format: `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`)
 - Use `list_teams`, `list_projects`, etc. to retrieve valid IDs
 
 ### Debug Mode
@@ -703,7 +705,7 @@ This module is submitted to the **RailCall Community Contest 2026 Q3**.
 |--------|--------|
 | Version | 0.2.7 |
 | Commands | 30 |
-| Test Coverage | 251 unit (78% lines) + 56 live against a real Linear workspace |
+| Test Coverage | 287 unit (79% lines) + 57 live against a real Linear workspace |
 | Python Support | 3.9+ |
 | License | MIT |
 | Production Ready | ✅ Yes |

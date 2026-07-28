@@ -579,20 +579,22 @@ class TestMutationSafetyReachesTheBundle:
         exec(compile(handler_text, "handler.py", "exec"), namespace)
 
         client_cls = namespace["LinearClient"]
+        # Match on the GraphQL keyword, not on the presence of a brace: regex
+        # constants like UUID_PATTERN are uppercase strings containing "{8}"
+        # and are not documents.
         constants = {
             name: value for name, value in namespace.items()
-            if name.isupper() and isinstance(value, str) and "{" in value
+            if name.isupper() and isinstance(value, str)
+            and value.lstrip().startswith(("query", "mutation"))
         }
-        assert constants, "no GraphQL constants found in the bundle"
+        assert len(constants) >= 40, (
+            f"only {len(constants)} GraphQL documents found - the collector is "
+            "probably matching the wrong thing"
+        )
 
         for name, document in constants.items():
-            stripped = document.lstrip()
-            if stripped.startswith("mutation"):
-                assert client_cls.is_mutation(document) is True, name
-            elif stripped.startswith("query"):
-                assert client_cls.is_mutation(document) is False, name
-            else:
-                pytest.fail(f"{name} is neither a query nor a mutation")
+            expected = document.lstrip().startswith("mutation")
+            assert client_cls.is_mutation(document) is expected, name
 
 
 class TestNoCredentialEnvironmentRead:

@@ -10,6 +10,7 @@ from handlers.utils.validation import (
     validate_iso_date,
     validate_non_empty,
     validate_comment_id,
+    validate_issue_id,
     validate_resource_types,
     validate_label_id,
     validate_cycle_id,
@@ -165,6 +166,52 @@ class TestCommentIdValidation:
     def test_rejects_garbage(self):
         with pytest.raises(ValidationError):
             validate_comment_id("not-a-uuid")
+
+
+class TestIssueIdAcceptsBothForms:
+    """An issue may be named by UUID or by its ENG-123 identifier.
+
+    Linear accepts both on reads and on every issue mutation; requiring the
+    UUID was this module's own restriction. The identifier is what an operator
+    already has - it is in the Linear URL and on the card - so rejecting it
+    sent people hunting for a UUID they had no reason to know.
+    """
+
+    UUID = "123e4567-e89b-12d3-a456-426614174000"
+
+    def test_accepts_uuid(self):
+        validate_issue_id(self.UUID)
+
+    @pytest.mark.parametrize("identifier", ["ENG-123", "RAI-1", "A1-9999", "eng-123"])
+    def test_accepts_identifier(self, identifier):
+        """Lowercase included - Linear resolves eng-123 the same as ENG-123."""
+        validate_issue_id(identifier)
+
+    @pytest.mark.parametrize("bad", [
+        "ENG",          # no number
+        "ENG-",         # no number
+        "-123",         # no team key
+        "123-456",      # key must start with a letter
+        "ENG 123",      # space, not a dash
+        "not-a-uuid",
+        "",
+        None,
+    ])
+    def test_rejects_everything_else(self, bad):
+        with pytest.raises(ValidationError, match="issue_id"):
+            validate_issue_id(bad)
+
+    def test_error_names_both_accepted_shapes(self):
+        """The message is what an operator gets back through the airlock."""
+        with pytest.raises(ValidationError, match="ENG-123"):
+            validate_issue_id("garbage")
+
+    def test_other_ids_still_require_a_uuid(self):
+        """Only issues have a human identifier; a team key is not one."""
+        with pytest.raises(ValidationError):
+            validate_state_id("ENG-123")
+        with pytest.raises(ValidationError):
+            validate_cycle_id("ENG-123")
 
 
 class TestResourceTypeValidation:
