@@ -13,22 +13,134 @@ Every on-screen string quoted here is what the Studio actually renders
 
 ---
 
-## Before recording (both cuts)
+## Step by step
 
-- [ ] ~8 untriaged issues in the workspace: no assignee, no priority, all in
-      the same state. Create them first. Do **not** use the `[RailCall Test]`
-      prefix — the live suite deletes anything carrying it.
-- [ ] A second browser tab on the Linear board, filtered to that team, so the
-      before/after is one click away.
-- [ ] `railcall studio` running, Sends tab showing the `linear.*` commands
-      registered. The credential is saved and masked, so nothing leaks.
-- [ ] Issue identifiers on the clipboard. **Use `ENG-123` form, not UUIDs** —
-      v0.2.9 accepts them and it is visibly less alien on camera.
-- [ ] Screen at 1280×800 or larger. The airlock cards are mono 11px and turn
-      to mush under YouTube compression at anything smaller.
-- [ ] One rehearsal pass. The approval is single-use: after Execute, the button
-      stays dead, and re-firing means Close → re-open → re-approve. Know that
-      before you are recording.
+Work top to bottom. Steps 1–4 are setup, 5 is the take, 6–8 publish it.
+
+### 1. Create the fixtures (one command)
+
+```bash
+export LINEAR_API_KEY="lin_api_..."
+python3 tools/demo_setup.py --create
+```
+
+Creates eight realistic untriaged issues — "Login redirect drops the ?next
+param", "Stripe webhook retries create duplicate invoices", and so on — then
+prints the three values you will paste on camera:
+
+```
+issue_ids   ["RAI-516", "RAI-517", ...]        <- paste into the textarea
+assignee_id 4633036c-...                        <- you, so the avatar is real
+state_id    306001a2-...  (In Progress)
+priority    2
+```
+
+Keep that terminal output where you can copy from it. Gathering these live is
+the single slowest thing you can do on camera.
+
+Titles use a `Demo:` prefix, not `[RailCall Test]` — the live suite deletes
+anything with the latter, and it would do it mid-recording.
+
+### 2. Set the screen up
+
+- **Display 1280×800 or larger.** The airlock cards are mono 11px; smaller and
+  they turn to mush under YouTube compression.
+- **Do Not Disturb on.** macOS: Control Centre → Focus → Do Not Disturb. A
+  Slack toast over the receipt means re-recording the take.
+- **Browser zoom at 100%** on the Studio, and again on the Linear tab.
+- **Close other tabs.** Tab titles are readable at 1280 wide and they are
+  nobody's business.
+- Hide the desktop and any dock badges you would rather not publish.
+
+### 3. Lay out the two windows
+
+- **Studio:** `railcall studio`, open the **Sends** tab, confirm the `linear.*`
+  commands are listed and not `not_configured`. The credential is saved and
+  entered masked, so nothing leaks on screen — do not open `keys.local.json`
+  or the vault for any reason.
+- **Linear:** second tab on the board, filtered to the team, searching
+  `Demo:` so all eight fixtures are visible in one frame.
+
+### 4. Rehearse once, then reset
+
+Run the whole ceremony once without recording. Two things you need to have felt
+before the real take:
+
+- **The approval is single-use.** After Execute the button stays dead. Firing
+  again means Close → re-open the command → Preview → Approve again.
+- **The rehearsal consumes the fixtures** — they end up assigned and In
+  Progress. Reset before recording:
+
+```bash
+python3 tools/demo_setup.py --cleanup
+python3 tools/demo_setup.py --create
+```
+
+New identifiers, so re-copy the paste block.
+
+### 5. Record
+
+macOS: **⌘⇧5** → *Record Selected Portion* → drag over the Studio window →
+Record. Or QuickTime → File → New Screen Recording.
+
+Then follow the shot table below. Speak over it live if you are comfortable;
+otherwise record silent and narrate afterwards — the timings hold either way.
+
+Stop with the button in the menu bar. It saves to the Desktop as `.mov`.
+
+### 6. Check the take before uploading
+
+Watch it once at full size and confirm:
+
+- [ ] `payload_hash`, `external_touch = YES`, `receipt_id` and `integrity` are
+      all legible — not just present
+- [ ] `success_count` on screen matches the number of rows that visibly changed
+      in Linear on the following shot
+- [ ] No notification, no other tab title, no API key anywhere in frame
+- [ ] Audio is audible and clip-free if you narrated live
+
+### 7. Upload
+
+YouTube → Create → Upload video.
+
+- **Visibility: Unlisted or Public.** Both embed. **Private does not** — an
+  embedded private video shows an error to every buyer.
+- Title: `Linear for RailCall — batch triage behind an approval gate`
+- Description: two lines and the two links —
+  `https://railcall.ai/marketplace/agentstack-labs/linear` and
+  `https://github.com/faizalmy/railcall-linear-module`
+- Skip the end screens and cards; they cover the final frame in an embed.
+
+Copy the share URL — the `https://youtu.be/<id>` form.
+
+### 8. Attach it to the listing
+
+```bash
+python3 tools/attach_video.py https://youtu.be/<id>
+```
+
+That PATCHes the live listing and prints the stored value back, so you can see
+it landed. It needs no republish. The equivalent by hand is in **Publishing the
+video** at the bottom of this file.
+
+Then tear the fixtures down:
+
+```bash
+python3 tools/demo_setup.py --cleanup
+```
+
+---
+
+## Quick checklist
+
+- [ ] `demo_setup.py --create`, paste block copied
+- [ ] 1280×800+, Do Not Disturb, 100% zoom, tabs closed
+- [ ] Studio Sends open, commands registered; Linear board filtered to `Demo:`
+- [ ] Rehearsed once, then `--cleanup` and `--create` again
+- [ ] Recorded, watched back, hashes legible, no leaks in frame
+- [ ] Uploaded **unlisted or public**, `youtu.be` URL copied
+- [ ] `attach_video.py <url>` run and confirmed
+- [ ] `demo_setup.py --cleanup`
 
 ---
 

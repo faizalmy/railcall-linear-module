@@ -99,3 +99,4 @@ AGENTS.md
 CLAUDE.md
 .claude/
 .code-review-graph
+tools/.demo_fixtures.json
