@@ -1,26 +1,28 @@
-Batch-triage your Linear backlog behind a human approval gate.
+Most Mondays I open Linear to a pile of issues nobody has looked at yet. Assign someone, set a priority, move it out of the backlog, repeat. Twenty minutes of clicking, and if anyone asks a month later who moved them, I have no answer.
 
-Monday triage is thirty round trips in the UI. A script is faster, but nobody sees what it is about to change and nothing records who approved it. This module stages the whole batch as one command: RailCall previews it, a human approves once, and the run leaves a receipt bound to that exact payload.
+This module does the whole pile in one pass, and it makes you look before it writes anything. You hand it the issues and what to change. RailCall shows you the exact payload and waits. You approve once, it runs, and it saves a receipt with your name on it and a hash of what you approved.
 
-**45 commands** across issues, teams, projects, users, workflow states, labels, cycles, comments, webhooks, milestones and initiatives. 18 reads run immediately; 27 writes are gated by the Approval Airlock.
+45 commands, covering issues, comments, labels, workflow states, cycles, projects, milestones, teams, users, webhooks and initiatives. Reading anything is instant. Anything that writes stops for a human first.
 
-## What sets it apart
+## Worth knowing
 
-- **Paste `ENG-123`** straight from the Linear URL — no hunting for a UUID
-- **Real full-text search** — Linear's own engine, so descriptions and comments match, not just titles
-- **Rate-limited mid-batch?** The command stops and returns `not_attempted`, so a re-run resumes where it left off
-- **Mutations are never auto-retried** — Linear has no idempotency key, so a retry after an accepted write would duplicate it. Recovery is a fresh approval.
-- **Initiatives** — roll projects up under a goal and post health updates (onTrack / atRisk / offTrack)
+- Issue arguments take the `ENG-123` you can already see in the Linear URL. No digging for a UUID.
+- Search uses Linear's own, so it matches descriptions and comments, not just titles.
+- Rate-limited halfway through a batch? It stops and tells you which issues it never touched. Run it again and it picks up from there.
+- It never silently retries a write. Linear can't tell a retry from a second request, so you could end up with duplicates. If a write fails, approve it again.
+- Initiatives work too: group projects under a goal, post an onTrack / atRisk / offTrack update.
 
-## Setup (two minutes)
+## Setup
 
-Run `railcall studio`, open **Sends**, pick **Linear — API key + team**. The saved team becomes the default for every team-scoped command, so most calls never repeat the UUID.
+Start `railcall studio`, open **Sends**, pick **Linear — API key + team**, then paste a key from Linear's API settings and your team id. Two minutes, and most commands won't ask for the team again.
 
-## Security
+Your key stays in the station vault. The published module can't read one out of your environment, never writes it to disk or a log, and receipts record which fields you sent, not the values.
 
-The key lives in the station vault, read at call time. The published bundle contains zero `os.environ` reads. Nothing is persisted, logged, or written into a cache key; receipts store field names and a hash, never values. Stdlib `urllib` only — zero dependencies.
+## What it won't do
 
-287 unit tests and 57 live tests against a real Linear workspace. MIT licensed.
+Only issues accept `ENG-123`; everything else wants an id. Milestones belong to a project, because that's how Linear models them. API keys only for now, no OAuth.
+
+Tested against a real Linear workspace, not mocks, with every command exercised end to end. MIT licensed.
 
 [Source](https://github.com/faizalmy/railcall-linear-module) · [CI](https://github.com/faizalmy/railcall-linear-module/actions/workflows/ci.yml)
 
