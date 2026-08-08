@@ -22,1155 +22,1017 @@
   },
   "commands": [
     {
-      "name": "list_issues",
-      "description": "List issues with optional filters",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "team_id": {
-            "type": "string",
-            "description": "Filter by team ID. Defaults to the team saved with the credential."
-          },
-          "state_id": {
-            "type": "string",
-            "description": "State filter"
-          },
-          "assignee_id": {
-            "type": "string",
-            "description": "Assignee filter"
-          },
-          "limit": {
-            "type": "integer",
-            "description": "Max results (default 50, max 250)",
-            "default": 50
-          }
+      "id": "list_issues",
+      "title": "List issues with optional filters",
+      "input_schema": {
+        "team_id": {
+          "type": "string",
+          "required": false,
+          "help": "Filter by team ID. Defaults to the team saved with the credential."
+        },
+        "state_id": {
+          "type": "string",
+          "required": false,
+          "help": "State filter"
+        },
+        "assignee_id": {
+          "type": "string",
+          "required": false,
+          "help": "Assignee filter"
+        },
+        "limit": {
+          "type": "integer",
+          "required": false,
+          "help": "Max results (default 50, max 250)",
+          "default": 50
         }
       },
       "side_effects": "none"
     },
     {
-      "name": "get_issue",
-      "description": "Get detailed information about a specific issue",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "issue_id": {
-            "type": "string",
-            "description": "Issue UUID or identifier, e.g. ENG-123"
-          }
-        },
-        "required": [
-          "issue_id"
-        ]
-      },
-      "side_effects": "none"
-    },
-    {
-      "name": "create_issue",
-      "description": "Create a new issue",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "team_id": {
-            "type": "string",
-            "description": "Team ID. Defaults to the team saved with the credential."
-          },
-          "title": {
-            "type": "string",
-            "description": "Issue title"
-          },
-          "description": {
-            "type": "string",
-            "description": "Issue description (markdown)"
-          },
-          "priority": {
-            "type": "integer",
-            "description": "Priority (0=none, 1=urgent, 2=high, 3=medium, 4=low)"
-          },
-          "assignee_id": {
-            "type": "string",
-            "description": "Assignee user ID"
-          },
-          "state_id": {
-            "type": "string",
-            "description": "Initial state ID"
-          },
-          "project_id": {
-            "type": "string",
-            "description": "Project ID"
-          },
-          "label_ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Label IDs"
-          }
-        },
-        "required": [
-          "title"
-        ]
-      },
-      "side_effects": "write"
-    },
-    {
-      "name": "update_issue",
-      "description": "Update an existing issue",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "issue_id": {
-            "type": "string",
-            "description": "Issue UUID or identifier, e.g. ENG-123"
-          },
-          "title": {
-            "type": "string",
-            "description": "New title"
-          },
-          "description": {
-            "type": "string",
-            "description": "New description"
-          },
-          "priority": {
-            "type": "integer",
-            "description": "New priority"
-          },
-          "assignee_id": {
-            "type": "string",
-            "description": "New assignee ID"
-          },
-          "state_id": {
-            "type": "string",
-            "description": "New state ID"
-          },
-          "label_ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "New label IDs"
-          }
-        },
-        "required": [
-          "issue_id"
-        ]
-      },
-      "side_effects": "write"
-    },
-    {
-      "name": "delete_issue",
-      "description": "Delete an issue",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "issue_id": {
-            "type": "string",
-            "description": "Issue UUID or identifier, e.g. ENG-123"
-          }
-        },
-        "required": [
-          "issue_id"
-        ]
-      },
-      "side_effects": "write"
-    },
-    {
-      "name": "archive_issue",
-      "description": "Archive an issue (reversible, unlike delete)",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "issue_id": {
-            "type": "string",
-            "description": "Issue UUID or identifier, e.g. ENG-123"
-          },
-          "trash": {
-            "type": "boolean",
-            "description": "Trash instead of archive",
-            "default": false
-          }
-        },
-        "required": [
-          "issue_id"
-        ]
-      },
-      "side_effects": "write"
-    },
-    {
-      "name": "unarchive_issue",
-      "description": "Restore a previously archived issue",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "issue_id": {
-            "type": "string",
-            "description": "Issue UUID or identifier, e.g. ENG-123"
-          }
-        },
-        "required": [
-          "issue_id"
-        ]
-      },
-      "side_effects": "write"
-    },
-    {
-      "name": "search_issues",
-      "description": "Full-text search across issue titles, descriptions and comments",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "query": {
-            "type": "string",
-            "description": "Search query"
-          },
-          "team_id": {
-            "type": "string",
-            "description": "Filter by team ID. Defaults to the team saved with the credential."
-          },
-          "limit": {
-            "type": "integer",
-            "description": "Max results (default 50, max 250)",
-            "default": 50
-          },
-          "include_comments": {
-            "type": "boolean",
-            "description": "Search comment bodies too",
-            "default": true
-          }
-        },
-        "required": [
-          "query"
-        ]
-      },
-      "side_effects": "none"
-    },
-    {
-      "name": "bulk_update_issues",
-      "description": "Update multiple issues at once",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "issue_ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Issue UUIDs or identifiers, e.g. ENG-123"
-          },
-          "state_id": {
-            "type": "string",
-            "description": "New state ID"
-          },
-          "assignee_id": {
-            "type": "string",
-            "description": "New assignee ID"
-          },
-          "priority": {
-            "type": "integer",
-            "description": "New priority"
-          },
-          "label_ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "New label IDs"
-          }
-        },
-        "required": [
-          "issue_ids"
-        ]
-      },
-      "side_effects": "write"
-    },
-    {
-      "name": "link_issues",
-      "description": "Link two issues with a relationship",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "issue_id": {
-            "type": "string",
-            "description": "Source issue UUID or identifier"
-          },
-          "related_issue_id": {
-            "type": "string",
-            "description": "Target issue UUID or identifier"
-          },
-          "relationship_type": {
-            "type": "string",
-            "description": "Relationship type (blocks, blocked_by, related)",
-            "default": "blocks"
-          }
-        },
-        "required": [
-          "issue_id",
-          "related_issue_id"
-        ]
-      },
-      "side_effects": "write"
-    },
-    {
-      "name": "list_teams",
-      "description": "List all teams in the workspace",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "description": "Max results (default 50, max 250)",
-            "default": 50
-          }
+      "id": "get_issue",
+      "title": "Get detailed information about a specific issue",
+      "input_schema": {
+        "issue_id": {
+          "type": "string",
+          "required": true,
+          "help": "Issue UUID or identifier, e.g. ENG-123"
         }
       },
       "side_effects": "none"
     },
     {
-      "name": "get_team",
-      "description": "Get detailed information about a specific team",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "team_id": {
-            "type": "string",
-            "description": "Team ID. Defaults to the team saved with the credential."
-          }
+      "id": "create_issue",
+      "title": "Create a new issue",
+      "input_schema": {
+        "team_id": {
+          "type": "string",
+          "required": false,
+          "help": "Team ID. Defaults to the team saved with the credential."
+        },
+        "title": {
+          "type": "string",
+          "required": true,
+          "help": "Issue title"
+        },
+        "description": {
+          "type": "string",
+          "required": false,
+          "help": "Issue description (markdown)"
+        },
+        "priority": {
+          "type": "integer",
+          "required": false,
+          "help": "Priority (0=none, 1=urgent, 2=high, 3=medium, 4=low)"
+        },
+        "assignee_id": {
+          "type": "string",
+          "required": false,
+          "help": "Assignee user ID"
+        },
+        "state_id": {
+          "type": "string",
+          "required": false,
+          "help": "Initial state ID"
+        },
+        "project_id": {
+          "type": "string",
+          "required": false,
+          "help": "Project ID"
+        },
+        "label_ids": {
+          "type": "array",
+          "required": false,
+          "help": "Label IDs"
+        }
+      },
+      "side_effects": "write"
+    },
+    {
+      "id": "update_issue",
+      "title": "Update an existing issue",
+      "input_schema": {
+        "issue_id": {
+          "type": "string",
+          "required": true,
+          "help": "Issue UUID or identifier, e.g. ENG-123"
+        },
+        "title": {
+          "type": "string",
+          "required": false,
+          "help": "New title"
+        },
+        "description": {
+          "type": "string",
+          "required": false,
+          "help": "New description"
+        },
+        "priority": {
+          "type": "integer",
+          "required": false,
+          "help": "New priority"
+        },
+        "assignee_id": {
+          "type": "string",
+          "required": false,
+          "help": "New assignee ID"
+        },
+        "state_id": {
+          "type": "string",
+          "required": false,
+          "help": "New state ID"
+        },
+        "label_ids": {
+          "type": "array",
+          "required": false,
+          "help": "New label IDs"
+        }
+      },
+      "side_effects": "write"
+    },
+    {
+      "id": "delete_issue",
+      "title": "Delete an issue",
+      "input_schema": {
+        "issue_id": {
+          "type": "string",
+          "required": true,
+          "help": "Issue UUID or identifier, e.g. ENG-123"
+        }
+      },
+      "side_effects": "write"
+    },
+    {
+      "id": "archive_issue",
+      "title": "Archive an issue (reversible, unlike delete)",
+      "input_schema": {
+        "issue_id": {
+          "type": "string",
+          "required": true,
+          "help": "Issue UUID or identifier, e.g. ENG-123"
+        },
+        "trash": {
+          "type": "boolean",
+          "required": false,
+          "help": "Trash instead of archive",
+          "default": false
+        }
+      },
+      "side_effects": "write"
+    },
+    {
+      "id": "unarchive_issue",
+      "title": "Restore a previously archived issue",
+      "input_schema": {
+        "issue_id": {
+          "type": "string",
+          "required": true,
+          "help": "Issue UUID or identifier, e.g. ENG-123"
+        }
+      },
+      "side_effects": "write"
+    },
+    {
+      "id": "search_issues",
+      "title": "Full-text search across issue titles, descriptions and comments",
+      "input_schema": {
+        "query": {
+          "type": "string",
+          "required": true,
+          "help": "Search query"
+        },
+        "team_id": {
+          "type": "string",
+          "required": false,
+          "help": "Filter by team ID. Defaults to the team saved with the credential."
+        },
+        "limit": {
+          "type": "integer",
+          "required": false,
+          "help": "Max results (default 50, max 250)",
+          "default": 50
+        },
+        "include_comments": {
+          "type": "boolean",
+          "required": false,
+          "help": "Search comment bodies too",
+          "default": true
         }
       },
       "side_effects": "none"
     },
     {
-      "name": "list_projects",
-      "description": "List all projects in the workspace",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "description": "Max results (default 50, max 250)",
-            "default": 50
-          }
+      "id": "bulk_update_issues",
+      "title": "Update multiple issues at once",
+      "input_schema": {
+        "issue_ids": {
+          "type": "array",
+          "required": true,
+          "help": "Issue UUIDs or identifiers, e.g. ENG-123"
+        },
+        "state_id": {
+          "type": "string",
+          "required": false,
+          "help": "New state ID"
+        },
+        "assignee_id": {
+          "type": "string",
+          "required": false,
+          "help": "New assignee ID"
+        },
+        "priority": {
+          "type": "integer",
+          "required": false,
+          "help": "New priority"
+        },
+        "label_ids": {
+          "type": "array",
+          "required": false,
+          "help": "New label IDs"
+        }
+      },
+      "side_effects": "write"
+    },
+    {
+      "id": "link_issues",
+      "title": "Link two issues with a relationship",
+      "input_schema": {
+        "issue_id": {
+          "type": "string",
+          "required": true,
+          "help": "Source issue UUID or identifier"
+        },
+        "related_issue_id": {
+          "type": "string",
+          "required": true,
+          "help": "Target issue UUID or identifier"
+        },
+        "relationship_type": {
+          "type": "string",
+          "required": false,
+          "help": "Relationship type (blocks, blocked_by, related)",
+          "default": "blocks"
+        }
+      },
+      "side_effects": "write"
+    },
+    {
+      "id": "list_teams",
+      "title": "List all teams in the workspace",
+      "input_schema": {
+        "limit": {
+          "type": "integer",
+          "required": false,
+          "help": "Max results (default 50, max 250)",
+          "default": 50
         }
       },
       "side_effects": "none"
     },
     {
-      "name": "get_project",
-      "description": "Get detailed information about a specific project",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "project_id": {
-            "type": "string",
-            "description": "Project ID"
-          }
-        },
-        "required": [
-          "project_id"
-        ]
-      },
-      "side_effects": "none"
-    },
-    {
-      "name": "create_project",
-      "description": "Create a new project",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "team_ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Team IDs (at least one)"
-          },
-          "name": {
-            "type": "string",
-            "description": "Project name"
-          },
-          "description": {
-            "type": "string",
-            "description": "Project description"
-          },
-          "lead_id": {
-            "type": "string",
-            "description": "Project lead user ID"
-          },
-          "start_date": {
-            "type": "string",
-            "description": "Start date, stored as YYYY-MM-DD"
-          },
-          "target_date": {
-            "type": "string",
-            "description": "Target date, stored as YYYY-MM-DD"
-          },
-          "priority": {
-            "type": "integer",
-            "description": "Priority (0=none, 1=urgent, 2=high, 3=medium, 4=low)"
-          }
-        },
-        "required": [
-          "team_ids",
-          "name"
-        ]
-      },
-      "side_effects": "write"
-    },
-    {
-      "name": "create_project_update",
-      "description": "Post a status update against a project",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "project_id": {
-            "type": "string",
-            "description": "Project ID"
-          },
-          "body": {
-            "type": "string",
-            "description": "Update text (markdown)"
-          },
-          "health": {
-            "type": "string",
-            "description": "Health signal",
-            "enum": [
-              "onTrack",
-              "atRisk",
-              "offTrack"
-            ]
-          }
-        },
-        "required": [
-          "project_id",
-          "body"
-        ]
-      },
-      "side_effects": "write"
-    },
-    {
-      "name": "list_users",
-      "description": "List all users in the workspace",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "description": "Max results (default 50, max 250)",
-            "default": 50
-          }
+      "id": "get_team",
+      "title": "Get detailed information about a specific team",
+      "input_schema": {
+        "team_id": {
+          "type": "string",
+          "required": false,
+          "help": "Team ID. Defaults to the team saved with the credential."
         }
       },
       "side_effects": "none"
     },
     {
-      "name": "get_user",
-      "description": "Get detailed information about a specific user",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "user_id": {
-            "type": "string",
-            "description": "User ID"
-          }
-        },
-        "required": [
-          "user_id"
-        ]
-      },
-      "side_effects": "none"
-    },
-    {
-      "name": "list_states",
-      "description": "List workflow states",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "team_id": {
-            "type": "string",
-            "description": "Filter by team ID. Defaults to the team saved with the credential."
-          },
-          "limit": {
-            "type": "integer",
-            "description": "Max results (default 50, max 250)",
-            "default": 50
-          }
+      "id": "list_projects",
+      "title": "List all projects in the workspace",
+      "input_schema": {
+        "limit": {
+          "type": "integer",
+          "required": false,
+          "help": "Max results (default 50, max 250)",
+          "default": 50
         }
       },
       "side_effects": "none"
     },
     {
-      "name": "create_state",
-      "description": "Create a new workflow state",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "team_id": {
-            "type": "string",
-            "description": "Team ID. Defaults to the team saved with the credential."
-          },
-          "name": {
-            "type": "string",
-            "description": "State name"
-          },
-          "color": {
-            "type": "string",
-            "description": "Color hex code"
-          },
-          "state_type": {
-            "type": "string",
-            "description": "State type (Linear rejects 'triage' - it is a team setting, not a creatable state)",
-            "default": "backlog",
-            "enum": [
-              "backlog",
-              "unstarted",
-              "started",
-              "completed",
-              "canceled"
-            ]
-          }
-        },
-        "required": [
-          "name",
-          "color"
-        ]
-      },
-      "side_effects": "write"
-    },
-    {
-      "name": "update_state",
-      "description": "Update an existing workflow state",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "state_id": {
-            "type": "string",
-            "description": "State ID"
-          },
-          "name": {
-            "type": "string",
-            "description": "New name"
-          },
-          "color": {
-            "type": "string",
-            "description": "New color"
-          }
-        },
-        "required": [
-          "state_id"
-        ]
-      },
-      "side_effects": "write"
-    },
-    {
-      "name": "list_labels",
-      "description": "List issue labels",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "team_id": {
-            "type": "string",
-            "description": "Filter by team ID. Defaults to the team saved with the credential."
-          },
-          "limit": {
-            "type": "integer",
-            "description": "Max results (default 50, max 250)",
-            "default": 50
-          }
+      "id": "get_project",
+      "title": "Get detailed information about a specific project",
+      "input_schema": {
+        "project_id": {
+          "type": "string",
+          "required": true,
+          "help": "Project ID"
         }
       },
       "side_effects": "none"
     },
     {
-      "name": "create_label",
-      "description": "Create a new issue label",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "team_id": {
-            "type": "string",
-            "description": "Team ID. Defaults to the team saved with the credential."
-          },
-          "name": {
-            "type": "string",
-            "description": "Label name"
-          },
-          "color": {
-            "type": "string",
-            "description": "Color hex code"
-          },
-          "description": {
-            "type": "string",
-            "description": "Label description"
-          }
+      "id": "create_project",
+      "title": "Create a new project",
+      "input_schema": {
+        "team_ids": {
+          "type": "array",
+          "required": true,
+          "help": "Team IDs (at least one)"
         },
-        "required": [
-          "name",
-          "color"
-        ]
+        "name": {
+          "type": "string",
+          "required": true,
+          "help": "Project name"
+        },
+        "description": {
+          "type": "string",
+          "required": false,
+          "help": "Project description"
+        },
+        "lead_id": {
+          "type": "string",
+          "required": false,
+          "help": "Project lead user ID"
+        },
+        "start_date": {
+          "type": "string",
+          "required": false,
+          "help": "Start date, stored as YYYY-MM-DD"
+        },
+        "target_date": {
+          "type": "string",
+          "required": false,
+          "help": "Target date, stored as YYYY-MM-DD"
+        },
+        "priority": {
+          "type": "integer",
+          "required": false,
+          "help": "Priority (0=none, 1=urgent, 2=high, 3=medium, 4=low)"
+        }
       },
       "side_effects": "write"
     },
     {
-      "name": "update_label",
-      "description": "Update an existing issue label",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "label_id": {
-            "type": "string",
-            "description": "Label ID"
-          },
-          "name": {
-            "type": "string",
-            "description": "New name"
-          },
-          "color": {
-            "type": "string",
-            "description": "New color"
-          },
-          "description": {
-            "type": "string",
-            "description": "New description"
-          }
+      "id": "create_project_update",
+      "title": "Post a status update against a project",
+      "input_schema": {
+        "project_id": {
+          "type": "string",
+          "required": true,
+          "help": "Project ID"
         },
-        "required": [
-          "label_id"
-        ]
+        "body": {
+          "type": "string",
+          "required": true,
+          "help": "Update text (markdown)"
+        },
+        "health": {
+          "type": "string",
+          "required": false,
+          "help": "Health signal",
+          "options": [
+            "onTrack",
+            "atRisk",
+            "offTrack"
+          ]
+        }
       },
       "side_effects": "write"
     },
     {
-      "name": "list_cycles",
-      "description": "List cycles for a team",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "team_id": {
-            "type": "string",
-            "description": "Team ID. Defaults to the team saved with the credential."
-          },
-          "limit": {
-            "type": "integer",
-            "description": "Max results (default 50, max 250)",
-            "default": 50
-          }
+      "id": "list_users",
+      "title": "List all users in the workspace",
+      "input_schema": {
+        "limit": {
+          "type": "integer",
+          "required": false,
+          "help": "Max results (default 50, max 250)",
+          "default": 50
         }
       },
       "side_effects": "none"
     },
     {
-      "name": "get_cycle",
-      "description": "Get detailed information about a specific cycle",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "cycle_id": {
-            "type": "string",
-            "description": "Cycle ID"
-          }
-        },
-        "required": [
-          "cycle_id"
-        ]
-      },
-      "side_effects": "none"
-    },
-    {
-      "name": "create_cycle",
-      "description": "Create a new cycle",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "team_id": {
-            "type": "string",
-            "description": "Team ID. Defaults to the team saved with the credential."
-          },
-          "starts_at": {
-            "type": "string",
-            "description": "Start date (ISO 8601)"
-          },
-          "ends_at": {
-            "type": "string",
-            "description": "End date (ISO 8601)"
-          },
-          "name": {
-            "type": "string",
-            "description": "Cycle name"
-          }
-        },
-        "required": [
-          "starts_at",
-          "ends_at"
-        ]
-      },
-      "side_effects": "write"
-    },
-    {
-      "name": "update_cycle",
-      "description": "Update an existing cycle",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "cycle_id": {
-            "type": "string",
-            "description": "Cycle ID"
-          },
-          "name": {
-            "type": "string",
-            "description": "New name"
-          },
-          "starts_at": {
-            "type": "string",
-            "description": "New start date"
-          },
-          "ends_at": {
-            "type": "string",
-            "description": "New end date"
-          }
-        },
-        "required": [
-          "cycle_id"
-        ]
-      },
-      "side_effects": "write"
-    },
-    {
-      "name": "list_comments",
-      "description": "List comments for an issue",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "issue_id": {
-            "type": "string",
-            "description": "Issue UUID or identifier, e.g. ENG-123"
-          },
-          "limit": {
-            "type": "integer",
-            "description": "Max results (default 50, max 250)",
-            "default": 50
-          }
-        },
-        "required": [
-          "issue_id"
-        ]
-      },
-      "side_effects": "none"
-    },
-    {
-      "name": "create_comment",
-      "description": "Create a new comment on an issue",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "issue_id": {
-            "type": "string",
-            "description": "Issue UUID or identifier, e.g. ENG-123"
-          },
-          "body": {
-            "type": "string",
-            "description": "Comment body (markdown)"
-          }
-        },
-        "required": [
-          "issue_id",
-          "body"
-        ]
-      },
-      "side_effects": "write"
-    },
-    {
-      "name": "update_comment",
-      "description": "Update an existing comment",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "comment_id": {
-            "type": "string",
-            "description": "Comment ID"
-          },
-          "body": {
-            "type": "string",
-            "description": "New comment body"
-          }
-        },
-        "required": [
-          "comment_id",
-          "body"
-        ]
-      },
-      "side_effects": "write"
-    },
-    {
-      "name": "delete_comment",
-      "description": "Delete a comment",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "comment_id": {
-            "type": "string",
-            "description": "Comment ID"
-          }
-        },
-        "required": [
-          "comment_id"
-        ]
-      },
-      "side_effects": "write"
-    },
-    {
-      "name": "list_webhooks",
-      "description": "List all webhooks",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "description": "Max results (default 50, max 250)",
-            "default": 50
-          }
+      "id": "get_user",
+      "title": "Get detailed information about a specific user",
+      "input_schema": {
+        "user_id": {
+          "type": "string",
+          "required": true,
+          "help": "User ID"
         }
       },
       "side_effects": "none"
     },
     {
-      "name": "create_webhook",
-      "description": "Create a new webhook subscription",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "url": {
-            "type": "string",
-            "description": "Webhook URL"
-          },
-          "enabled": {
-            "type": "boolean",
-            "description": "Whether webhook is enabled",
-            "default": true
-          },
-          "resource_types": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Resources to subscribe to, e.g. Issue, Comment",
-            "default": [
-              "Issue",
-              "Comment"
-            ]
-          },
-          "label": {
-            "type": "string",
-            "description": "Name shown in Linear settings"
-          },
-          "team_id": {
-            "type": "string",
-            "description": "Scope to one team (default: whole workspace). Defaults to the team saved with the credential."
-          },
-          "all_public_teams": {
-            "type": "boolean",
-            "description": "Subscribe to all public teams (or give team_id)",
-            "default": false
-          }
+      "id": "list_states",
+      "title": "List workflow states",
+      "input_schema": {
+        "team_id": {
+          "type": "string",
+          "required": false,
+          "help": "Filter by team ID. Defaults to the team saved with the credential."
         },
-        "required": [
-          "url"
-        ]
-      },
-      "side_effects": "write"
-    },
-    {
-      "name": "update_webhook",
-      "description": "Update an existing webhook",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "webhook_id": {
-            "type": "string",
-            "description": "Webhook ID"
-          },
-          "url": {
-            "type": "string",
-            "description": "New URL"
-          },
-          "enabled": {
-            "type": "boolean",
-            "description": "New enabled status"
-          }
-        },
-        "required": [
-          "webhook_id"
-        ]
-      },
-      "side_effects": "write"
-    },
-    {
-      "name": "delete_webhook",
-      "description": "Delete a webhook",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "webhook_id": {
-            "type": "string",
-            "description": "Webhook ID"
-          }
-        },
-        "required": [
-          "webhook_id"
-        ]
-      },
-      "side_effects": "write"
-    },
-    {
-      "name": "list_milestones",
-      "description": "List project milestones",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "description": "Max results (default 50, max 250)",
-            "default": 50
-          },
-          "project_id": {
-            "type": "string",
-            "description": "Project filter"
-          }
+        "limit": {
+          "type": "integer",
+          "required": false,
+          "help": "Max results (default 50, max 250)",
+          "default": 50
         }
       },
       "side_effects": "none"
     },
     {
-      "name": "create_milestone",
-      "description": "Create a new project milestone",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "Milestone name"
-          },
-          "target_date": {
-            "type": "string",
-            "description": "Target date, stored as YYYY-MM-DD"
-          },
-          "description": {
-            "type": "string",
-            "description": "Milestone description"
-          },
-          "project_id": {
-            "type": "string",
-            "description": "Parent project ID"
-          }
+      "id": "create_state",
+      "title": "Create a new workflow state",
+      "input_schema": {
+        "team_id": {
+          "type": "string",
+          "required": false,
+          "help": "Team ID. Defaults to the team saved with the credential."
         },
-        "required": [
-          "project_id",
-          "name"
-        ]
+        "name": {
+          "type": "string",
+          "required": true,
+          "help": "State name"
+        },
+        "color": {
+          "type": "string",
+          "required": true,
+          "help": "Color hex code"
+        },
+        "state_type": {
+          "type": "string",
+          "required": false,
+          "help": "State type (Linear rejects 'triage' - it is a team setting, not a creatable state)",
+          "default": "backlog",
+          "options": [
+            "backlog",
+            "unstarted",
+            "started",
+            "completed",
+            "canceled"
+          ]
+        }
       },
       "side_effects": "write"
     },
     {
-      "name": "update_milestone",
-      "description": "Update an existing project milestone",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "milestone_id": {
-            "type": "string",
-            "description": "Milestone ID"
-          },
-          "name": {
-            "type": "string",
-            "description": "New name"
-          },
-          "target_date": {
-            "type": "string",
-            "description": "New target date, stored as YYYY-MM-DD"
-          },
-          "description": {
-            "type": "string",
-            "description": "New description"
-          }
+      "id": "update_state",
+      "title": "Update an existing workflow state",
+      "input_schema": {
+        "state_id": {
+          "type": "string",
+          "required": true,
+          "help": "State ID"
         },
-        "required": [
-          "milestone_id"
-        ]
+        "name": {
+          "type": "string",
+          "required": false,
+          "help": "New name"
+        },
+        "color": {
+          "type": "string",
+          "required": false,
+          "help": "New color"
+        }
       },
       "side_effects": "write"
     },
     {
-      "name": "list_initiatives",
-      "description": "List initiatives (Linear's roadmap objects)",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "status": {
-            "type": "string",
-            "description": "Status filter",
-            "enum": [
-              "Proposed",
-              "Planned",
-              "Active",
-              "Completed",
-              "Canceled"
-            ]
-          },
-          "limit": {
-            "type": "integer",
-            "description": "Max results (default 50, max 250)",
-            "default": 50
-          }
+      "id": "list_labels",
+      "title": "List issue labels",
+      "input_schema": {
+        "team_id": {
+          "type": "string",
+          "required": false,
+          "help": "Filter by team ID. Defaults to the team saved with the credential."
+        },
+        "limit": {
+          "type": "integer",
+          "required": false,
+          "help": "Max results (default 50, max 250)",
+          "default": 50
         }
       },
       "side_effects": "none"
     },
     {
-      "name": "get_initiative",
-      "description": "Get one initiative with the projects rolled up under it",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "initiative_id": {
-            "type": "string",
-            "description": "Initiative ID"
-          }
+      "id": "create_label",
+      "title": "Create a new issue label",
+      "input_schema": {
+        "team_id": {
+          "type": "string",
+          "required": false,
+          "help": "Team ID. Defaults to the team saved with the credential."
         },
-        "required": [
-          "initiative_id"
-        ]
+        "name": {
+          "type": "string",
+          "required": true,
+          "help": "Label name"
+        },
+        "color": {
+          "type": "string",
+          "required": true,
+          "help": "Color hex code"
+        },
+        "description": {
+          "type": "string",
+          "required": false,
+          "help": "Label description"
+        }
+      },
+      "side_effects": "write"
+    },
+    {
+      "id": "update_label",
+      "title": "Update an existing issue label",
+      "input_schema": {
+        "label_id": {
+          "type": "string",
+          "required": true,
+          "help": "Label ID"
+        },
+        "name": {
+          "type": "string",
+          "required": false,
+          "help": "New name"
+        },
+        "color": {
+          "type": "string",
+          "required": false,
+          "help": "New color"
+        },
+        "description": {
+          "type": "string",
+          "required": false,
+          "help": "New description"
+        }
+      },
+      "side_effects": "write"
+    },
+    {
+      "id": "list_cycles",
+      "title": "List cycles for a team",
+      "input_schema": {
+        "team_id": {
+          "type": "string",
+          "required": false,
+          "help": "Team ID. Defaults to the team saved with the credential."
+        },
+        "limit": {
+          "type": "integer",
+          "required": false,
+          "help": "Max results (default 50, max 250)",
+          "default": 50
+        }
       },
       "side_effects": "none"
     },
     {
-      "name": "create_initiative",
-      "description": "Create a new initiative",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "Initiative name"
-          },
-          "description": {
-            "type": "string",
-            "description": "Initiative description"
-          },
-          "target_date": {
-            "type": "string",
-            "description": "Target date, stored as YYYY-MM-DD"
-          },
-          "status": {
-            "type": "string",
-            "description": "Initiative status",
-            "enum": [
-              "Proposed",
-              "Planned",
-              "Active",
-              "Completed",
-              "Canceled"
-            ]
-          },
-          "owner_id": {
-            "type": "string",
-            "description": "Owner user ID"
-          }
+      "id": "get_cycle",
+      "title": "Get detailed information about a specific cycle",
+      "input_schema": {
+        "cycle_id": {
+          "type": "string",
+          "required": true,
+          "help": "Cycle ID"
+        }
+      },
+      "side_effects": "none"
+    },
+    {
+      "id": "create_cycle",
+      "title": "Create a new cycle",
+      "input_schema": {
+        "team_id": {
+          "type": "string",
+          "required": false,
+          "help": "Team ID. Defaults to the team saved with the credential."
         },
-        "required": [
-          "name"
-        ]
+        "starts_at": {
+          "type": "string",
+          "required": true,
+          "help": "Start date (ISO 8601)"
+        },
+        "ends_at": {
+          "type": "string",
+          "required": true,
+          "help": "End date (ISO 8601)"
+        },
+        "name": {
+          "type": "string",
+          "required": false,
+          "help": "Cycle name"
+        }
       },
       "side_effects": "write"
     },
     {
-      "name": "update_initiative",
-      "description": "Update an existing initiative",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "initiative_id": {
-            "type": "string",
-            "description": "Initiative ID"
-          },
-          "name": {
-            "type": "string",
-            "description": "New name"
-          },
-          "description": {
-            "type": "string",
-            "description": "New description"
-          },
-          "target_date": {
-            "type": "string",
-            "description": "New target date, stored as YYYY-MM-DD"
-          },
-          "status": {
-            "type": "string",
-            "description": "New status",
-            "enum": [
-              "Proposed",
-              "Planned",
-              "Active",
-              "Completed",
-              "Canceled"
-            ]
-          }
+      "id": "update_cycle",
+      "title": "Update an existing cycle",
+      "input_schema": {
+        "cycle_id": {
+          "type": "string",
+          "required": true,
+          "help": "Cycle ID"
         },
-        "required": [
-          "initiative_id"
-        ]
+        "name": {
+          "type": "string",
+          "required": false,
+          "help": "New name"
+        },
+        "starts_at": {
+          "type": "string",
+          "required": false,
+          "help": "New start date"
+        },
+        "ends_at": {
+          "type": "string",
+          "required": false,
+          "help": "New end date"
+        }
       },
       "side_effects": "write"
     },
     {
-      "name": "link_project_to_initiative",
-      "description": "Roll a project up under an initiative",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "initiative_id": {
-            "type": "string",
-            "description": "Initiative ID"
-          },
-          "project_id": {
-            "type": "string",
-            "description": "Project ID"
-          }
+      "id": "list_comments",
+      "title": "List comments for an issue",
+      "input_schema": {
+        "issue_id": {
+          "type": "string",
+          "required": true,
+          "help": "Issue UUID or identifier, e.g. ENG-123"
         },
-        "required": [
-          "initiative_id",
-          "project_id"
-        ]
+        "limit": {
+          "type": "integer",
+          "required": false,
+          "help": "Max results (default 50, max 250)",
+          "default": 50
+        }
+      },
+      "side_effects": "none"
+    },
+    {
+      "id": "create_comment",
+      "title": "Create a new comment on an issue",
+      "input_schema": {
+        "issue_id": {
+          "type": "string",
+          "required": true,
+          "help": "Issue UUID or identifier, e.g. ENG-123"
+        },
+        "body": {
+          "type": "string",
+          "required": true,
+          "help": "Comment body (markdown)"
+        }
       },
       "side_effects": "write"
     },
     {
-      "name": "create_initiative_update",
-      "description": "Post a status update against an initiative",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "initiative_id": {
-            "type": "string",
-            "description": "Initiative ID"
-          },
-          "body": {
-            "type": "string",
-            "description": "Update text (markdown)"
-          },
-          "health": {
-            "type": "string",
-            "description": "Health signal",
-            "enum": [
-              "onTrack",
-              "atRisk",
-              "offTrack"
-            ]
-          }
+      "id": "update_comment",
+      "title": "Update an existing comment",
+      "input_schema": {
+        "comment_id": {
+          "type": "string",
+          "required": true,
+          "help": "Comment ID"
         },
-        "required": [
-          "initiative_id",
-          "body"
-        ]
+        "body": {
+          "type": "string",
+          "required": true,
+          "help": "New comment body"
+        }
+      },
+      "side_effects": "write"
+    },
+    {
+      "id": "delete_comment",
+      "title": "Delete a comment",
+      "input_schema": {
+        "comment_id": {
+          "type": "string",
+          "required": true,
+          "help": "Comment ID"
+        }
+      },
+      "side_effects": "write"
+    },
+    {
+      "id": "list_webhooks",
+      "title": "List all webhooks",
+      "input_schema": {
+        "limit": {
+          "type": "integer",
+          "required": false,
+          "help": "Max results (default 50, max 250)",
+          "default": 50
+        }
+      },
+      "side_effects": "none"
+    },
+    {
+      "id": "create_webhook",
+      "title": "Create a new webhook subscription",
+      "input_schema": {
+        "url": {
+          "type": "string",
+          "required": true,
+          "help": "Webhook URL"
+        },
+        "enabled": {
+          "type": "boolean",
+          "required": false,
+          "help": "Whether webhook is enabled",
+          "default": true
+        },
+        "resource_types": {
+          "type": "array",
+          "required": false,
+          "help": "Resources to subscribe to, e.g. Issue, Comment",
+          "default": [
+            "Issue",
+            "Comment"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "required": false,
+          "help": "Name shown in Linear settings"
+        },
+        "team_id": {
+          "type": "string",
+          "required": false,
+          "help": "Scope to one team (default: whole workspace). Defaults to the team saved with the credential."
+        },
+        "all_public_teams": {
+          "type": "boolean",
+          "required": false,
+          "help": "Subscribe to all public teams (or give team_id)",
+          "default": false
+        }
+      },
+      "side_effects": "write"
+    },
+    {
+      "id": "update_webhook",
+      "title": "Update an existing webhook",
+      "input_schema": {
+        "webhook_id": {
+          "type": "string",
+          "required": true,
+          "help": "Webhook ID"
+        },
+        "url": {
+          "type": "string",
+          "required": false,
+          "help": "New URL"
+        },
+        "enabled": {
+          "type": "boolean",
+          "required": false,
+          "help": "New enabled status"
+        }
+      },
+      "side_effects": "write"
+    },
+    {
+      "id": "delete_webhook",
+      "title": "Delete a webhook",
+      "input_schema": {
+        "webhook_id": {
+          "type": "string",
+          "required": true,
+          "help": "Webhook ID"
+        }
+      },
+      "side_effects": "write"
+    },
+    {
+      "id": "list_milestones",
+      "title": "List project milestones",
+      "input_schema": {
+        "limit": {
+          "type": "integer",
+          "required": false,
+          "help": "Max results (default 50, max 250)",
+          "default": 50
+        },
+        "project_id": {
+          "type": "string",
+          "required": false,
+          "help": "Project filter"
+        }
+      },
+      "side_effects": "none"
+    },
+    {
+      "id": "create_milestone",
+      "title": "Create a new project milestone",
+      "input_schema": {
+        "name": {
+          "type": "string",
+          "required": true,
+          "help": "Milestone name"
+        },
+        "target_date": {
+          "type": "string",
+          "required": false,
+          "help": "Target date, stored as YYYY-MM-DD"
+        },
+        "description": {
+          "type": "string",
+          "required": false,
+          "help": "Milestone description"
+        },
+        "project_id": {
+          "type": "string",
+          "required": true,
+          "help": "Parent project ID"
+        }
+      },
+      "side_effects": "write"
+    },
+    {
+      "id": "update_milestone",
+      "title": "Update an existing project milestone",
+      "input_schema": {
+        "milestone_id": {
+          "type": "string",
+          "required": true,
+          "help": "Milestone ID"
+        },
+        "name": {
+          "type": "string",
+          "required": false,
+          "help": "New name"
+        },
+        "target_date": {
+          "type": "string",
+          "required": false,
+          "help": "New target date, stored as YYYY-MM-DD"
+        },
+        "description": {
+          "type": "string",
+          "required": false,
+          "help": "New description"
+        }
+      },
+      "side_effects": "write"
+    },
+    {
+      "id": "list_initiatives",
+      "title": "List initiatives (Linear's roadmap objects)",
+      "input_schema": {
+        "status": {
+          "type": "string",
+          "required": false,
+          "help": "Status filter",
+          "options": [
+            "Proposed",
+            "Planned",
+            "Active",
+            "Completed",
+            "Canceled"
+          ]
+        },
+        "limit": {
+          "type": "integer",
+          "required": false,
+          "help": "Max results (default 50, max 250)",
+          "default": 50
+        }
+      },
+      "side_effects": "none"
+    },
+    {
+      "id": "get_initiative",
+      "title": "Get one initiative with the projects rolled up under it",
+      "input_schema": {
+        "initiative_id": {
+          "type": "string",
+          "required": true,
+          "help": "Initiative ID"
+        }
+      },
+      "side_effects": "none"
+    },
+    {
+      "id": "create_initiative",
+      "title": "Create a new initiative",
+      "input_schema": {
+        "name": {
+          "type": "string",
+          "required": true,
+          "help": "Initiative name"
+        },
+        "description": {
+          "type": "string",
+          "required": false,
+          "help": "Initiative description"
+        },
+        "target_date": {
+          "type": "string",
+          "required": false,
+          "help": "Target date, stored as YYYY-MM-DD"
+        },
+        "status": {
+          "type": "string",
+          "required": false,
+          "help": "Initiative status",
+          "options": [
+            "Proposed",
+            "Planned",
+            "Active",
+            "Completed",
+            "Canceled"
+          ]
+        },
+        "owner_id": {
+          "type": "string",
+          "required": false,
+          "help": "Owner user ID"
+        }
+      },
+      "side_effects": "write"
+    },
+    {
+      "id": "update_initiative",
+      "title": "Update an existing initiative",
+      "input_schema": {
+        "initiative_id": {
+          "type": "string",
+          "required": true,
+          "help": "Initiative ID"
+        },
+        "name": {
+          "type": "string",
+          "required": false,
+          "help": "New name"
+        },
+        "description": {
+          "type": "string",
+          "required": false,
+          "help": "New description"
+        },
+        "target_date": {
+          "type": "string",
+          "required": false,
+          "help": "New target date, stored as YYYY-MM-DD"
+        },
+        "status": {
+          "type": "string",
+          "required": false,
+          "help": "New status",
+          "options": [
+            "Proposed",
+            "Planned",
+            "Active",
+            "Completed",
+            "Canceled"
+          ]
+        }
+      },
+      "side_effects": "write"
+    },
+    {
+      "id": "link_project_to_initiative",
+      "title": "Roll a project up under an initiative",
+      "input_schema": {
+        "initiative_id": {
+          "type": "string",
+          "required": true,
+          "help": "Initiative ID"
+        },
+        "project_id": {
+          "type": "string",
+          "required": true,
+          "help": "Project ID"
+        }
+      },
+      "side_effects": "write"
+    },
+    {
+      "id": "create_initiative_update",
+      "title": "Post a status update against an initiative",
+      "input_schema": {
+        "initiative_id": {
+          "type": "string",
+          "required": true,
+          "help": "Initiative ID"
+        },
+        "body": {
+          "type": "string",
+          "required": true,
+          "help": "Update text (markdown)"
+        },
+        "health": {
+          "type": "string",
+          "required": false,
+          "help": "Health signal",
+          "options": [
+            "onTrack",
+            "atRisk",
+            "offTrack"
+          ]
+        }
       },
       "side_effects": "write"
     }
