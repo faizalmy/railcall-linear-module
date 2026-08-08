@@ -1024,10 +1024,13 @@ class TestTeamIdDefault:
 
     @patch('handlers.handler.execute_query')
     def test_no_team_anywhere_is_a_clear_error(self, mock_query):
+        """Auto-detect queries teams; if 0 or >1 teams, raises ValueError."""
+        mock_query.return_value = {"teams": {"nodes": []}}
         with self._vault(None):
             with pytest.raises(ValueError, match="No team_id given and none saved"):
                 create_issue(title="Fix login")
-        mock_query.assert_not_called()
+        # Auto-detect called once to list teams
+        mock_query.assert_called_once()
 
     @patch('handlers.handler.execute_query')
     def test_a_saved_team_is_still_validated(self, mock_query):
