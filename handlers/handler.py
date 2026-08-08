@@ -23,10 +23,11 @@ Read commands for workspace metadata (teams, projects, users, states, labels)
 are cached for METADATA_TTL seconds; issue and comment reads are never cached.
 """
 
+import re
 from typing import Any, Dict, List, Optional
 
 from .client import execute_query
-from .cache import cached, invalidate_all
+from .cache import cached, get_cache, make_cache_key, invalidate_all
 from .credentials import resolve_default_team_id
 from .queries import (
     LIST_INITIATIVES,
@@ -73,6 +74,10 @@ from .queries import (
     LIST_MILESTONES,
     CREATE_MILESTONE,
     UPDATE_MILESTONE,
+    RESOLVE_TEAM_BY_NAME,
+    RESOLVE_PROJECT_BY_NAME,
+    RESOLVE_CYCLE_BY_NAME,
+    RESOLVE_USER_BY_NAME,
 )
 from .utils import (
     AuthenticationError,
@@ -109,6 +114,91 @@ def _run_query(query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
     return execute_query(query, variables)
 
 
+# ============================================================================
+# NAME -> ID RESOLUTION
+# ============================================================================
+
+_UUID_RE = re.compile(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I
+)
+
+# resource_type -> (query, the GraphQL field the nodes come back under)
+_NAME_LOOKUPS: Dict[str, tuple] = {
+    "team": (RESOLVE_TEAM_BY_NAME, "teams"),
+    "project": (RESOLVE_PROJECT_BY_NAME, "projects"),
+    "cycle": (RESOLVE_CYCLE_BY_NAME, "cycles"),
+    "user": (RESOLVE_USER_BY_NAME, "users"),
+}
+
+
+def _lookup_id_by_name(name: str, resource_type: str) -> str:
+    """Resolve one human-readable name to its Linear UUID.
+
+    Cached for METADATA_TTL: names map to the same ID for the life of the
+    resource, and a bulk command would otherwise re-query for every item.
+
+    Raises:
+        ValueError: if nothing matches, or if the name is ambiguous.
+    """
+    if resource_type not in _NAME_LOOKUPS:
+        raise ValueError(f"Cannot resolve names for resource type '{resource_type}'")
+
+    query, data_key = _NAME_LOOKUPS[resource_type]
+
+    cache = get_cache()
+    cache_key = make_cache_key("_lookup_id_by_name", (resource_type, name), {})
+    hit = cache.get(cache_key)
+    if hit is not None:
+        return hit
+
+    result = execute_query(query, {"name": name})
+    nodes = (result.get(data_key) or {}).get("nodes") or []
+
+    if not nodes:
+        raise ValueError(
+            f"No {resource_type} named '{name}' found. Pass the UUID, or check "
+            f"the name matches exactly (matching is case-sensitive)."
+        )
+    if len(nodes) > 1:
+        raise ValueError(
+            f"'{name}' matches {len(nodes)} {resource_type}s. Pass the UUID "
+            f"instead: {', '.join(n['id'] for n in nodes)}"
+        )
+
+    resolved = nodes[0]["id"]
+    cache.set(cache_key, resolved, ttl=METADATA_TTL)
+    return resolved
+
+
+def _resolve_id(
+    value: Optional[str],
+    resource_type: str,
+    context: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
+    """Accept either a UUID or a name, always return a UUID.
+
+    A UUID passes straight through untouched, so this is safe to layer in front
+    of the existing validators without changing behaviour for callers that
+    already pass IDs.
+    """
+    if not value:
+        return value
+    if _UUID_RE.match(value):
+        return value
+    return _lookup_id_by_name(value, resource_type)
+
+
+def _resolve_ids(
+    values: Optional[List[str]],
+    resource_type: str,
+    context: Optional[Dict[str, Any]] = None,
+) -> Optional[List[str]]:
+    """List form of _resolve_id - each entry may be a UUID or a name."""
+    if not values:
+        return values
+    return [_resolve_id(v, resource_type, context) for v in values]
+
+
 def _team_id_or_default(team_id: Optional[str]) -> str:
     """The caller's team, or the one saved alongside the credential.
 
@@ -128,6 +218,7 @@ def _team_id_or_default(team_id: Optional[str]) -> str:
             "or save a default team in Studio → Sends → Linear."
         )
 
+    resolved = _resolve_id(resolved, "team")
     validate_team_id(resolved)
     return resolved
 
@@ -161,12 +252,14 @@ def list_issues(
     # GraphQL variable is typed, and raw text would be both invalid and injectable)
     issue_filter: Dict[str, Any] = {}
     if team_id:
+        team_id = _resolve_id(team_id, "team", context)
         validate_team_id(team_id)
         issue_filter["team"] = {"id": {"eq": team_id}}
     if state_id:
         validate_state_id(state_id)
         issue_filter["state"] = {"id": {"eq": state_id}}
     if assignee_id:
+        assignee_id = _resolve_id(assignee_id, "user", context)
         validate_user_id(assignee_id)
         issue_filter["assignee"] = {"id": {"eq": assignee_id}}
 
@@ -388,6 +481,7 @@ def search_issues(
         "includeComments": include_comments,
     }
     if team_id:
+        team_id = _resolve_id(team_id, "team", context)
         validate_team_id(team_id)
         # searchIssues takes a team natively - no IssueFilter needed
         variables["teamId"] = team_id
@@ -746,12 +840,14 @@ def create_project(
     if not team_ids:
         raise ValueError("team_ids cannot be empty - a project needs at least one team")
 
+    team_ids = _resolve_ids(team_ids, "team", context)
     for team_id in team_ids:
         validate_team_id(team_id)
 
     validate_non_empty(name, "name")
 
     if lead_id:
+        lead_id = _resolve_id(lead_id, "user", context)
         validate_user_id(lead_id)
     if priority is not None:
         validate_priority(priority)
@@ -899,6 +995,7 @@ def list_states(
 
     state_filter: Dict[str, Any] = {}
     if team_id:
+        team_id = _resolve_id(team_id, "team", context)
         validate_team_id(team_id)
         state_filter["team"] = {"id": {"eq": team_id}}
 
@@ -1030,6 +1127,7 @@ def list_labels(
 
     label_filter: Dict[str, Any] = {}
     if team_id:
+        team_id = _resolve_id(team_id, "team", context)
         validate_team_id(team_id)
         label_filter["team"] = {"id": {"eq": team_id}}
 
@@ -1462,6 +1560,7 @@ def create_webhook(
     validate_resource_types(resource_types)
 
     if team_id:
+        team_id = _resolve_id(team_id, "team", context)
         validate_team_id(team_id)
 
     # Linear requires a scope and offers no default: a webhook is either bound to

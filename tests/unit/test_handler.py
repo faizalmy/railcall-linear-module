@@ -938,9 +938,14 @@ class TestCreateProject:
 
     @patch('handlers.handler.execute_query')
     def test_rejects_bad_team_id(self, mock_query):
-        with pytest.raises(ValidationError):
+        """A non-UUID is now read as a team name, so it fails at the lookup."""
+        mock_query.return_value = {"teams": {"nodes": []}}
+
+        with pytest.raises(ValueError, match="No team named 'not-a-uuid'"):
             create_project(team_ids=["not-a-uuid"], name="Apollo")
-        mock_query.assert_not_called()
+
+        # The lookup ran, but the project was never created.
+        assert mock_query.call_count == 1
 
     @patch('handlers.handler.execute_query')
     def test_raises_when_api_reports_failure(self, mock_query):
@@ -1026,11 +1031,15 @@ class TestTeamIdDefault:
 
     @patch('handlers.handler.execute_query')
     def test_a_saved_team_is_still_validated(self, mock_query):
-        """A malformed vault value must not reach the API."""
+        """A non-UUID vault value is resolved as a name, and must resolve."""
+        mock_query.return_value = {"teams": {"nodes": []}}
+
         with self._vault("not-a-uuid"):
-            with pytest.raises(ValidationError):
+            with pytest.raises(ValueError, match="No team named 'not-a-uuid'"):
                 create_issue(title="Fix login")
-        mock_query.assert_not_called()
+
+        # Only the resolution attempt - no issue was created.
+        assert mock_query.call_count == 1
 
     @patch('handlers.handler.execute_query')
     def test_every_team_scoped_command_accepts_the_default(self, mock_query):

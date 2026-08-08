@@ -883,3 +883,54 @@ mutation($input: InitiativeUpdateCreateInput!) {
   }
 }
 """
+
+# ============================================================================
+# NAME -> ID LOOKUPS
+# ============================================================================
+# Used by handler._resolve_id so callers can pass "Backend" where the API wants
+# a UUID. Each returns the bare ids: the resolver only needs enough to pick one
+# and to tell the caller when a name is ambiguous.
+
+RESOLVE_TEAM_BY_NAME = """
+query($name: String!) {
+  teams(filter: { name: { eq: $name } }) {
+    nodes {
+      id
+      name
+    }
+  }
+}
+"""
+
+RESOLVE_PROJECT_BY_NAME = """
+query($name: String!) {
+  projects(filter: { name: { eq: $name } }) {
+    nodes {
+      id
+      name
+    }
+  }
+}
+"""
+
+RESOLVE_CYCLE_BY_NAME = """
+query($name: String!) {
+  cycles(filter: { name: { eq: $name } }) {
+    nodes {
+      id
+      name
+    }
+  }
+}
+"""
+
+RESOLVE_USER_BY_NAME = """
+query($name: String!) {
+  users(filter: { name: { eq: $name } }) {
+    nodes {
+      id
+      name
+    }
+  }
+}
+"""
