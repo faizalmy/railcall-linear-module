@@ -204,19 +204,27 @@ def _team_id_or_default(team_id: Optional[str]) -> str:
 
     The Studio's credential form requires a team UUID next to the API key, so
     every configured install has one. Using it as the default means the common
-    single-team case does not have to paste the same UUID into every command -
-    which was the sharpest usability edge here, since nothing accepts a team
-    key like ENG.
+    single-team case does not have to paste the same UUID into every command.
+
+    If no team is saved and the workspace has exactly one team, auto-detect it.
 
     Raises:
-        ValueError: if no team was passed and none is saved.
+        ValueError: if no team was passed, none is saved, and auto-detect fails.
     """
     resolved = team_id or resolve_default_team_id()
     if not resolved:
-        raise ValueError(
-            "No team_id given and none saved with the credential. Pass team_id, "
-            "or save a default team in Studio → Sends → Linear."
+        # Auto-detect: if workspace has exactly one team, use it
+        result = execute_query(
+            "{ teams { nodes { id name } } }", {}
         )
+        teams = result.get("teams", {}).get("nodes", [])
+        if len(teams) == 1:
+            resolved = teams[0]["id"]
+        else:
+            raise ValueError(
+                "No team_id given and none saved with the credential. Pass team_id, "
+                "or save a default team in Studio → Sends → Linear."
+            )
 
     resolved = _resolve_id(resolved, "team")
     validate_team_id(resolved)
